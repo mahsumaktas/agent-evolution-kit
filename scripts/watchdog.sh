@@ -1,65 +1,154 @@
-#!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
+#!/bin/bash
+# watchdog.sh — 4-tier self-healing for AgentSystem gateway
+# Designed to run every 60 seconds via launchd.
 #
-# watchdog.sh — 4-tier self-healing process monitor
-#
-# Designed to run periodically (every 60 seconds) via cron, launchd, or systemd.
-#
-# Tiers:
-#   L1: External process supervisor (launchd/systemd KeepAlive — not this script)
-#   L2: Process + port + log freshness checks
-#   L3: Diagnostic + remediation (disk, memory, restart)
-#   L4: Webhook escalation alert
-#
-# Usage:
-#   watchdog.sh                          # Run health check cycle
-#   watchdog.sh --config /path/to.json   # Use custom config file
-#   watchdog.sh --help                   # Show usage
-#
-# Configuration (environment variables or config file):
-#   WATCHDOG_PROCESS_NAME    Process name to monitor (default: my-agent)
-#   WATCHDOG_PORT            TCP port to check (default: 8080)
-#   WATCHDOG_LOG_PATH        Log file to check for freshness (optional)
-#   WATCHDOG_WEBHOOK_URL     Webhook URL for L4 alerts (optional)
-#   WATCHDOG_SERVICE_LABEL   launchd/systemd service label (optional)
-
+# L1: launchd KeepAlive (external, already exists)
+# L2: Process + port + log freshness checks (this script)
+# L3: Diagnostic + remediation (disk, memory, log analysis)
+# L4: Discord escalation alert
 set -euo pipefail
 
-# === Configuration ===
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
+# --- Constants ---
+readonly STATE_FILE="/tmp/watchdog-state.json"
+readonly LOG_FILE="/tmp/watchdog.log"
+readonly WEBHOOK_FILE="${HOME}/.agent-evolution/webhook-url.txt"
+readonly GATEWAY_LABEL="gui/$(id -u)/ai.agent-system.gateway"
+readonly GATEWAY_PORT=28643
+readonly GATEWAY_WS_PORT=28645
+readonly LOG_FRESHNESS_THRESHOLD=300   # 5 minutes — detect outages faster
+L3_FAIL_THRESHOLD=3          # Consecutive L2 fails before L3 — overridden by restart policy
+readonly L4_ALERT_COOLDOWN=1800       # 30 minutes between Discord alerts
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly METRICS_DB="${HOME}/.agent-evolution/memory/metrics.db"
+readonly BLACKBOARD_SCRIPT="${HOME}/.agent-evolution/scripts/blackboard.sh"
+readonly RESTART_POLICY_FILE="${HOME}/.agent-evolution/config/restart-policies.yaml"
 
-readonly STATE_DIR="$AEK_HOME/memory/logs"
-readonly STATE_FILE="$STATE_DIR/watchdog-state.json"
-readonly LOG_FILE="$STATE_DIR/watchdog.log"
+# --- Restart policy defaults (overridden by config) ---
+POLICY_MAX_RESTARTS=5
+POLICY_MAX_CONSECUTIVE_FAILURES=3
+POLICY_COOLDOWN_SECONDS=2
+POLICY_BACKOFF="exponential"
+POLICY_MAX_BACKOFF_SECONDS=60
+POLICY_STABILITY_RESET_SECONDS=300
+POLICY_PERMANENTLY_DEAD_ACTION="alert_operator"
 
-# Configurable parameters (override via env vars)
-PROCESS_NAME="${WATCHDOG_PROCESS_NAME:-my-agent}"
-WATCH_PORT="${WATCHDOG_PORT:-8080}"
-WATCH_LOG="${WATCHDOG_LOG_PATH:-}"
-WEBHOOK_URL="${WATCHDOG_WEBHOOK_URL:-}"
-SERVICE_LABEL="${WATCHDOG_SERVICE_LABEL:-}"
+# --- Supervisor state tracking ---
+TOTAL_RESTARTS=0
+LAST_STABLE_TIME=0
 
-# Thresholds
-readonly LOG_FRESHNESS_THRESHOLD="${WATCHDOG_LOG_FRESHNESS:-300}"   # 5 minutes
-readonly L3_FAIL_THRESHOLD="${WATCHDOG_L3_THRESHOLD:-3}"            # Consecutive L2 fails before L3
-readonly L4_ALERT_COOLDOWN="${WATCHDOG_ALERT_COOLDOWN:-1800}"       # 30 min between alerts
-readonly FORCE_RESTART_THRESHOLD=5                                  # Force restart after N failures
+# --- Load restart policy from YAML ---
+load_restart_policy() {
+    local agent_name="${1:-agent-system-gateway}"
 
-METRICS_DB="${AEK_HOME}/memory/metrics.db"
-SCRIPT_NAME="$(basename "$0")"
+    if [[ ! -f "$RESTART_POLICY_FILE" ]]; then
+        log "WARN" "Restart policy file not found: ${RESTART_POLICY_FILE}, using defaults"
+        return 0
+    fi
 
-# === Globals ===
+    # Parse YAML with Python (simple key-value extraction)
+    eval "$(python3 - "$RESTART_POLICY_FILE" "$agent_name" <<'PYEOF'
+import sys
+
+config_path = sys.argv[1]
+agent_name = sys.argv[2]
+
+with open(config_path) as f:
+    lines = f.readlines()
+
+# Simple YAML parser: find agent block, extract values
+current_agent = None
+agents_section = False
+values = {}
+default_values = {}
+
+for line in lines:
+    stripped = line.rstrip()
+    if not stripped or stripped.startswith('#'):
+        continue
+
+    indent = len(line) - len(line.lstrip())
+
+    if stripped == 'agents:':
+        agents_section = True
+        continue
+
+    if agents_section and indent == 2 and stripped.endswith(':'):
+        current_agent = stripped.rstrip(':').strip()
+        continue
+
+    if agents_section and indent == 4 and current_agent and ':' in stripped:
+        key, val = stripped.split(':', 1)
+        key = key.strip()
+        val = val.strip()
+        if current_agent == agent_name:
+            values[key] = val
+        elif current_agent == 'default':
+            default_values[key] = val
+
+# Merge: agent-specific overrides default
+merged = {**default_values, **values}
+
+field_map = {
+    'max_restarts': 'POLICY_MAX_RESTARTS',
+    'max_consecutive_failures': 'POLICY_MAX_CONSECUTIVE_FAILURES',
+    'cooldown_seconds': 'POLICY_COOLDOWN_SECONDS',
+    'backoff': 'POLICY_BACKOFF',
+    'max_backoff_seconds': 'POLICY_MAX_BACKOFF_SECONDS',
+    'stability_reset_seconds': 'POLICY_STABILITY_RESET_SECONDS',
+    'permanently_dead_action': 'POLICY_PERMANENTLY_DEAD_ACTION',
+}
+
+for yaml_key, bash_var in field_map.items():
+    if yaml_key in merged:
+        v = merged[yaml_key]
+        print(f'{bash_var}="{v}"')
+PYEOF
+)" 2>/dev/null || log "WARN" "Failed to parse restart policy, using defaults"
+
+    log "INFO" "Policy loaded for '${agent_name}': max_restarts=${POLICY_MAX_RESTARTS}, max_consecutive=${POLICY_MAX_CONSECUTIVE_FAILURES}, backoff=${POLICY_BACKOFF}, cooldown=${POLICY_COOLDOWN_SECONDS}s"
+}
+
+# --- Backoff calculation ---
+calculate_backoff() {
+    local attempt="$1"
+    local delay
+
+    if [[ "$POLICY_BACKOFF" == "exponential" ]]; then
+        # cooldown * 2^(attempt-1), capped at max_backoff
+        delay=$(python3 -c "print(min(${POLICY_COOLDOWN_SECONDS} * (2 ** (${attempt} - 1)), ${POLICY_MAX_BACKOFF_SECONDS}))" 2>/dev/null || echo "$POLICY_COOLDOWN_SECONDS")
+    else
+        # linear: cooldown * attempt, capped at max_backoff
+        delay=$(( POLICY_COOLDOWN_SECONDS * attempt ))
+        if [[ $delay -gt $POLICY_MAX_BACKOFF_SECONDS ]]; then
+            delay=$POLICY_MAX_BACKOFF_SECONDS
+        fi
+    fi
+
+    echo "$delay"
+}
+
+# --- Metrics helper ---
+save_metric() {
+    local metric="$1" value="$2" tags="${3:-}"
+    sqlite3 "$METRICS_DB" \
+        "INSERT OR IGNORE INTO metrics (agent,metric,value,tags,timestamp) VALUES ('watchdog','$metric',$value,'$tags',datetime('now'));" 2>/dev/null || true
+}
+
+# --- Globals ---
+DISCORD_WEBHOOK_URL=""
 FAIL_COUNT=0
 LAST_ALERT_TS=0
 LAST_CHECK_TS=0
 LAST_STATUS="unknown"
 
-# === Logging ===
+# --- Logging ---
 log() {
     local level="$1"; shift
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] $*" >> "$LOG_FILE"
+    local msg="$*"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] ${msg}" >> "$LOG_FILE"
 }
 
+# Keep log file from growing forever (max 5000 lines)
 trim_log() {
     if [[ -f "$LOG_FILE" ]]; then
         local line_count
@@ -71,46 +160,57 @@ trim_log() {
     fi
 }
 
-# === Metrics helper ===
-save_metric() {
-    local metric="$1" value="$2" tags="${3:-}"
-    if [[ -f "$METRICS_DB" ]]; then
-        python3 - "$METRICS_DB" "$metric" "$value" "$tags" <<'PYEOF'
-import sqlite3, sys
-db, metric, value, tags = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
-try:
-    conn = sqlite3.connect(db)
-    conn.execute("INSERT OR IGNORE INTO metrics (agent,metric,value,tags,timestamp) VALUES ('watchdog',?,?,?,datetime('now'))", (metric, value, tags))
-    conn.commit()
-    conn.close()
-except: pass
-PYEOF
-    fi
-}
-
-# === State management ===
+# --- State management ---
 load_state() {
     if [[ -f "$STATE_FILE" ]]; then
-        local state_data
-        state_data="$(python3 - "$STATE_FILE" <<'PYEOF'
+        # Parse JSON state file (jq-free for minimal dependencies)
+        FAIL_COUNT="$(python3 -c "
 import json, sys
 try:
-    with open(sys.argv[1]) as f:
-        s = json.load(f)
+    s = json.load(open('${STATE_FILE}'))
     print(s.get('fail_count', 0))
+except: print(0)
+" 2>/dev/null || echo 0)"
+
+        LAST_ALERT_TS="$(python3 -c "
+import json
+try:
+    s = json.load(open('${STATE_FILE}'))
     print(s.get('last_alert_ts', 0))
+except: print(0)
+" 2>/dev/null || echo 0)"
+
+        LAST_CHECK_TS="$(python3 -c "
+import json
+try:
+    s = json.load(open('${STATE_FILE}'))
+    print(s.get('last_check_ts', 0))
+except: print(0)
+" 2>/dev/null || echo 0)"
+
+        LAST_STATUS="$(python3 -c "
+import json
+try:
+    s = json.load(open('${STATE_FILE}'))
     print(s.get('last_status', 'unknown'))
-except:
-    print(0)
-    print(0)
-    print('unknown')
-PYEOF
-)" || true
-        if [[ -n "$state_data" ]]; then
-            FAIL_COUNT="$(echo "$state_data" | sed -n '1p')"
-            LAST_ALERT_TS="$(echo "$state_data" | sed -n '2p')"
-            LAST_STATUS="$(echo "$state_data" | sed -n '3p')"
-        fi
+except: print('unknown')
+" 2>/dev/null || echo "unknown")"
+
+        TOTAL_RESTARTS="$(python3 -c "
+import json
+try:
+    s = json.load(open('${STATE_FILE}'))
+    print(s.get('total_restarts', 0))
+except: print(0)
+" 2>/dev/null || echo 0)"
+
+        LAST_STABLE_TIME="$(python3 -c "
+import json
+try:
+    s = json.load(open('${STATE_FILE}'))
+    print(s.get('last_stable_time', 0))
+except: print(0)
+" 2>/dev/null || echo 0)"
     fi
 }
 
@@ -118,31 +218,30 @@ save_state() {
     local status="$1"
     local now
     now="$(date +%s)"
-    local human_ts
-    human_ts="$(date '+%Y-%m-%d %H:%M:%S')"
 
-    python3 - "$STATE_FILE" "$FAIL_COUNT" "$LAST_ALERT_TS" "$now" "$status" "$human_ts" <<'PYEOF'
-import json, sys
+    python3 -c "
+import json
 state = {
-    'fail_count': int(sys.argv[2]),
-    'last_alert_ts': int(sys.argv[3]),
-    'last_check_ts': int(sys.argv[4]),
-    'last_status': sys.argv[5],
-    'last_check_human': sys.argv[6]
+    'fail_count': ${FAIL_COUNT},
+    'last_alert_ts': ${LAST_ALERT_TS},
+    'last_check_ts': ${now},
+    'last_status': '${status}',
+    'last_check_human': '$(date '+%Y-%m-%d %H:%M:%S')',
+    'total_restarts': ${TOTAL_RESTARTS},
+    'last_stable_time': ${LAST_STABLE_TIME}
 }
-with open(sys.argv[1], 'w') as f:
+with open('${STATE_FILE}', 'w') as f:
     json.dump(state, f, indent=2)
-PYEOF
-    [[ $? -ne 0 ]] && log "WARN" "Failed to save state"
+" 2>/dev/null || log "WARN" "Failed to save state"
 }
 
-# === Webhook notification ===
-send_alert() {
+# --- Discord notification ---
+send_discord_alert() {
     local message="$1"
     local color="${2:-16711680}"  # Default: red
 
-    if [[ -z "$WEBHOOK_URL" ]]; then
-        log "WARN" "No webhook URL configured, cannot send alert"
+    if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
+        log "WARN" "No Discord webhook, cannot send alert"
         return 0
     fi
 
@@ -152,50 +251,52 @@ send_alert() {
     local elapsed=$((now - LAST_ALERT_TS))
     if [[ $elapsed -lt $L4_ALERT_COOLDOWN ]]; then
         local remaining=$((L4_ALERT_COOLDOWN - elapsed))
-        log "INFO" "Alert cooldown active (${remaining}s remaining), skipping"
+        log "INFO" "Alert cooldown active (${remaining}s remaining), skipping Discord"
         return 0
     fi
 
     local payload
-    payload=$(python3 - "$message" "$color" "$SCRIPT_NAME" <<'PYEOF'
-import json, sys
-from datetime import datetime, timezone
-msg, color, script = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-data = {"embeds": [{"title": "Watchdog Alert", "description": msg, "color": color, "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "footer": {"text": f"{script} | L4 escalation"}}]}
-print(json.dumps(data))
-PYEOF
+    payload=$(cat <<JSONEOF
+{
+  "embeds": [{
+    "title": "Oracle Watchdog Alert",
+    "description": "${message}",
+    "color": ${color},
+    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    "footer": {"text": "watchdog.sh | L4 escalation"}
+  }]
+}
+JSONEOF
 )
 
     if curl -s -o /dev/null -w "%{http_code}" \
         -H "Content-Type: application/json" \
         -d "$payload" \
-        "$WEBHOOK_URL" 2>/dev/null | grep -q "^2"; then
-        log "INFO" "Alert sent successfully"
+        "$DISCORD_WEBHOOK_URL" 2>/dev/null | grep -q "^2"; then
+        log "INFO" "Discord alert sent successfully"
         LAST_ALERT_TS="$now"
     else
-        log "WARN" "Failed to send alert"
+        log "WARN" "Failed to send Discord alert"
     fi
 }
 
-# === L2: Health Checks ===
+# --- L2: Health checks ---
 
-# Check 1: Process exists (exact name match to avoid false positives)
+# Check 1: Gateway process exists
+# CRITICAL: Use exact process name match to avoid false positives from
+# tail -f, grep, or other processes that contain "agent-system" in args.
+# The actual gateway process is named "agent-system-gateway" (confirmed via ps -eo pid,comm).
 check_process() {
-    if pgrep -x "$PROCESS_NAME" &>/dev/null; then
+    # Primary: exact process name match
+    if pgrep -x "agent-system-gateway" &>/dev/null; then
         return 0
     fi
 
-    # Fallback: check via service label
-    if [[ -n "$SERVICE_LABEL" ]]; then
-        local pid
-        if [[ "$(uname)" == "Darwin" ]]; then
-            pid="$(launchctl print "$SERVICE_LABEL" 2>/dev/null | grep -o 'pid = [0-9]*' | grep -o '[0-9]*' || true)"
-        else
-            pid="$(systemctl show "$SERVICE_LABEL" --property=MainPID 2>/dev/null | cut -d= -f2 || true)"
-        fi
-        if [[ -n "$pid" && "$pid" != "0" ]] && kill -0 "$pid" 2>/dev/null; then
-            return 0
-        fi
+    # Secondary: launchctl PID check (handles renamed binaries)
+    local pid
+    pid="$(launchctl print "$GATEWAY_LABEL" 2>/dev/null | grep -o 'pid = [0-9]*' | grep -o '[0-9]*' || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        return 0
     fi
 
     return 1
@@ -203,50 +304,136 @@ check_process() {
 
 # Check 2: Port listening
 check_port() {
-    if [[ "$WATCH_PORT" == "0" || -z "$WATCH_PORT" ]]; then
-        return 0  # Port check disabled
+    # Check if gateway port is listening (TCP)
+    if lsof -iTCP:"$GATEWAY_PORT" -sTCP:LISTEN -P -n &>/dev/null 2>&1; then
+        return 0
     fi
-
-    if command -v lsof &>/dev/null; then
-        if lsof -iTCP:"$WATCH_PORT" -sTCP:LISTEN -P -n &>/dev/null 2>&1; then
-            return 0
-        fi
-    elif command -v ss &>/dev/null; then
-        if ss -tlnp | grep -q ":${WATCH_PORT} " 2>/dev/null; then
-            return 0
-        fi
-    elif command -v netstat &>/dev/null; then
-        if netstat -tlnp 2>/dev/null | grep -q ":${WATCH_PORT} "; then
-            return 0
-        fi
+    # Also check WS port
+    if lsof -iTCP:"$GATEWAY_WS_PORT" -sTCP:LISTEN -P -n &>/dev/null 2>&1; then
+        return 0
     fi
-
+    # No pgrep fallback — if ports aren't listening, that's a real failure.
+    # Previous pgrep -f "agent-system" matched tail/grep processes (false positive).
     return 1
 }
 
 # Check 3: Log freshness
 check_log_freshness() {
-    if [[ -z "$WATCH_LOG" || ! -f "$WATCH_LOG" ]]; then
-        return 0  # No log to check
+    local log_file=""
+
+    # Find the gateway log
+    for candidate in \
+        "${HOME}/.agent-evolution/logs/gateway.log" \
+        "${HOME}/.agent-evolution/logs/stderr.log" \
+        "${HOME}/.agent-evolution/gateway-stderr.log"; do
+        if [[ -f "$candidate" ]]; then
+            log_file="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$log_file" ]]; then
+        # Try launchd plist
+        local plist_stderr
+        plist_stderr="$(defaults read "${HOME}/Library/LaunchAgents/ai.agent-system.gateway" StandardErrorPath 2>/dev/null || true)"
+        if [[ -n "$plist_stderr" && -f "$plist_stderr" ]]; then
+            log_file="$plist_stderr"
+        fi
+    fi
+
+    if [[ -z "$log_file" ]]; then
+        log "WARN" "Cannot find gateway log file for freshness check"
+        return 0  # Don't fail on missing log
     fi
 
     local now
     now="$(date +%s)"
     local file_mtime
-
-    if [[ "$(uname)" == "Darwin" ]]; then
-        file_mtime="$(stat -f %m "$WATCH_LOG" 2>/dev/null || echo 0)"
-    else
-        file_mtime="$(stat -c %Y "$WATCH_LOG" 2>/dev/null || echo 0)"
-    fi
-
+    file_mtime="$(stat -f %m "$log_file" 2>/dev/null || echo 0)"
     local age=$((now - file_mtime))
 
     if [[ $age -gt $LOG_FRESHNESS_THRESHOLD ]]; then
-        log "WARN" "Log file is stale: ${age}s old (threshold: ${LOG_FRESHNESS_THRESHOLD}s)"
+        log "WARN" "Gateway log is stale: ${age}s old (threshold: ${LOG_FRESHNESS_THRESHOLD}s)"
         return 1
     fi
 
+    return 0
+}
+
+
+# Check 4: Chrome CDP health (port 18804)
+check_cdp() {
+    local cdp_port=18804
+    if curl -s --max-time 3 "http://127.0.0.1:${cdp_port}/json/version" >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    log "WARN" "CDP port ${cdp_port} not responding, attempting restart..."
+    
+    # Kill stale Chrome-CDP processes
+    pkill -f "remote-debugging-port=${cdp_port}" 2>/dev/null || true
+    sleep 2
+    
+    # Restart via launcher script
+    if [[ -x "${HOME}/bin/chrome-debug-launcher.sh" ]]; then
+        bash "${HOME}/bin/chrome-debug-launcher.sh" >> /tmp/chrome-cdp.log 2>&1
+        sleep 3
+        if curl -s --max-time 3 "http://127.0.0.1:${cdp_port}/json/version" >/dev/null 2>&1; then
+            log "INFO" "CDP auto-recovered on port ${cdp_port}"
+            save_metric "cdp_restart" 1 "auto"
+            return 0
+        fi
+    fi
+    
+    log "ERROR" "CDP auto-recovery failed"
+    save_metric "cdp_fail" 1 "auto"
+    return 1
+}
+
+# Check 5: Session bloat auto-archive (>2MB sessions cause repeat-answer bugs)
+check_session_bloat() {
+    local sessions_dir="${HOME}/.agent-evolution/agents"
+    local archive_dir="${HOME}/.agent-evolution/session-archive/auto-$(date +%Y%m%d)"
+    local bloated=0
+
+    while IFS= read -r f; do
+        local size_bytes
+        size_bytes=$(stat -f %z "$f" 2>/dev/null || echo 0)
+        if [[ $size_bytes -gt 2097152 ]]; then  # 2MB
+            local agent session_id size_human
+            agent=$(echo "$f" | sed 's|.*/agents/||;s|/sessions/.*||')
+            session_id=$(basename "$f" .jsonl)
+            size_human=$(ls -lh "$f" | awk '{print $5}')
+            log "WARN" "Bloated session: ${agent}/${session_id} (${size_human})"
+
+            mkdir -p "$archive_dir"
+            mv "$f" "$archive_dir/"
+            bloated=$((bloated + 1))
+
+            # Remove from sessions.json mapping
+            local sessions_json="${HOME}/.agent-evolution/agents/${agent}/sessions/sessions.json"
+            if [[ -f "$sessions_json" ]]; then
+                python3 - "$sessions_json" "$session_id" <<'PYEOF'
+import json, sys
+path, sid = sys.argv[1], sys.argv[2]
+with open(path) as f: d = json.load(f)
+to_remove = [k for k,v in d.items() if isinstance(v,dict) and v.get('sessionId','').startswith(sid[:8])]
+for k in to_remove: del d[k]
+if to_remove:
+    with open(path,'w') as f: json.dump(d, f, indent=2)
+PYEOF
+            fi
+
+            log "INFO" "Auto-archived bloated session: ${agent}/${session_id}"
+            save_metric "session_bloat_archived" 1 "agent:${agent}"
+        fi
+    done < <(find "$sessions_dir" -name "*.jsonl" -size +2M 2>/dev/null)
+
+    if [[ $bloated -gt 0 ]]; then
+        log "WARN" "Archived ${bloated} bloated session(s). Gateway restart recommended."
+        send_discord_alert "Auto-archived ${bloated} bloated session(s) (>2MB). Repeat-answer bug prevention." "16776960"
+        bash "$BLACKBOARD_SCRIPT" set "session:last_bloat_archive" "$(date +%s)" 2>/dev/null || true
+    fi
     return 0
 }
 
@@ -266,6 +453,10 @@ run_l2_checks() {
         failures+=("log_stale")
     fi
 
+    if ! check_cdp; then
+        failures+=("cdp_down")
+    fi
+
     if [[ ${#failures[@]} -gt 0 ]]; then
         local fail_str
         fail_str="$(IFS=','; echo "${failures[*]}")"
@@ -277,7 +468,7 @@ run_l2_checks() {
     return 0
 }
 
-# === L3: Diagnostic + Remediation ===
+# --- L3: Diagnostic + remediation ---
 run_l3_diagnostic() {
     log "INFO" "L3: Running diagnostic (${FAIL_COUNT} consecutive failures)..."
 
@@ -290,36 +481,56 @@ run_l3_diagnostic() {
     if [[ $disk_usage -gt 95 ]]; then
         issues+=("disk_full_${disk_usage}pct")
         log "ERROR" "L3: Disk usage critical: ${disk_usage}%"
-    fi
 
-    # Check 2: Memory pressure (macOS) or available memory (Linux)
-    if [[ "$(uname)" == "Darwin" ]]; then
-        local mem_free
-        mem_free="$(memory_pressure 2>/dev/null | grep "System-wide memory free percentage" | grep -o '[0-9]*' || echo 50)"
-        if [[ $mem_free -lt 10 ]]; then
-            issues+=("memory_pressure_${mem_free}pct_free")
-            log "ERROR" "L3: Memory pressure critical: ${mem_free}% free"
+        # Try to free space: clean old sandbox/deploy backups
+        if [[ -d "/tmp/sandbox-"* ]] 2>/dev/null; then
+            find /tmp -maxdepth 1 -name "sandbox-*" -mtime +1 -exec rm -rf {} \; 2>/dev/null || true
+            fixed+=("cleaned_old_sandboxes")
         fi
-    else
-        local mem_avail
-        mem_avail="$(awk '/MemAvailable/ {printf "%.0f", $2/1024}' /proc/meminfo 2>/dev/null || echo 9999)"
-        if [[ $mem_avail -lt 256 ]]; then
-            issues+=("low_memory_${mem_avail}MB")
-            log "ERROR" "L3: Available memory critical: ${mem_avail}MB"
+        if [[ -d "/tmp/deploy-backups" ]]; then
+            find /tmp/deploy-backups -maxdepth 1 -mindepth 1 -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
+            fixed+=("cleaned_old_backups")
         fi
     fi
 
-    # Check 3: Recent crashes in log
-    if [[ -n "$WATCH_LOG" && -f "$WATCH_LOG" ]]; then
-        local recent_crashes
-        recent_crashes="$(tail -100 "$WATCH_LOG" | grep -c -iE 'CRASH|FATAL|UNCAUGHT|SIGABRT|SIGSEGV' 2>/dev/null || echo 0)"
-        if [[ $recent_crashes -gt 0 ]]; then
-            issues+=("recent_crashes_${recent_crashes}")
-            log "WARN" "L3: ${recent_crashes} crash indicators in recent log"
+    # Check 2: Memory pressure
+    local mem_pressure
+    mem_pressure="$(memory_pressure 2>/dev/null | grep "System-wide memory free percentage" | grep -o '[0-9]*' || echo 50)"
+    if [[ $mem_pressure -lt 10 ]]; then
+        issues+=("memory_pressure_${mem_pressure}pct_free")
+        log "ERROR" "L3: Memory pressure critical: ${mem_pressure}% free"
+    fi
+
+    # Check 3: Gateway crash in recent log
+    local recent_crashes=0
+    for log_candidate in \
+        "${HOME}/.agent-evolution/logs/gateway.log" \
+        "${HOME}/.agent-evolution/logs/stderr.log"; do
+        if [[ -f "$log_candidate" ]]; then
+            recent_crashes="$(tail -100 "$log_candidate" | grep -c -iE 'CRASH|FATAL|UNCAUGHT|SIGABRT|SIGSEGV' 2>/dev/null || echo 0)"
+            break
+        fi
+    done
+
+    if [[ $recent_crashes -gt 0 ]]; then
+        issues+=("recent_crashes_${recent_crashes}")
+        log "WARN" "L3: ${recent_crashes} crash indicators in recent log"
+    fi
+
+    # Check 4: Session file corruption (>1MB = trouble)
+    local session_dir="${HOME}/.agent-evolution/sessions"
+    if [[ -d "$session_dir" ]]; then
+        local large_sessions
+        large_sessions="$(find "$session_dir" -name '*.jsonl' -size +1M 2>/dev/null | wc -l | tr -d ' ')"
+        if [[ $large_sessions -gt 0 ]]; then
+            issues+=("large_sessions_${large_sessions}")
+            log "WARN" "L3: ${large_sessions} session file(s) > 1MB (may cause incomplete thinking drops)"
         fi
     fi
 
-    # Check 4: Attempt restart
+    # Check 5: Gateway restart — try if process missing OR port not listening
+    # Both conditions indicate the gateway is non-functional even if something
+    # named "agent-system" exists (e.g. zombie, stuck supervisor).
     local needs_restart=false
     local restart_reason=""
 
@@ -330,68 +541,44 @@ run_l3_diagnostic() {
         needs_restart=true
         restart_reason="port_not_listening"
         issues+=("process_alive_but_port_dead")
-        log "WARN" "L3: Process exists but port not listening — zombie/stuck state"
+        log "WARN" "L3: Gateway process exists but port not listening — zombie/stuck state"
     fi
 
     if $needs_restart; then
-        log "INFO" "L3: Attempting restart (reason: ${restart_reason})..."
+        TOTAL_RESTARTS=$((TOTAL_RESTARTS + 1))
+        local backoff_delay
+        backoff_delay="$(calculate_backoff "$TOTAL_RESTARTS")"
+        log "INFO" "L3: Attempting gateway restart #${TOTAL_RESTARTS}/${POLICY_MAX_RESTARTS} (reason: ${restart_reason}, backoff: ${backoff_delay}s, type: ${POLICY_BACKOFF})..."
 
-        if [[ -n "$SERVICE_LABEL" ]]; then
-            if [[ "$(uname)" == "Darwin" ]]; then
-                # macOS: try kickstart first, then bootout+bootstrap
-                if launchctl kickstart -k "$SERVICE_LABEL" 2>/dev/null; then
-                    log "INFO" "L3: kickstart issued, waiting 8s..."
-                    sleep 8
-                else
-                    log "WARN" "L3: kickstart failed, trying bootout+bootstrap..."
-                    launchctl bootout "$SERVICE_LABEL" 2>/dev/null || true
-                    sleep 2
-                    # Extract plist path from label
-                    local plist_name
-                    plist_name="$(echo "$SERVICE_LABEL" | sed 's|gui/[0-9]*/||')"
-                    launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/${plist_name}.plist" 2>/dev/null || true
-                    sleep 8
-                fi
-            else
-                # Linux: systemctl restart
-                systemctl --user restart "$SERVICE_LABEL" 2>/dev/null || \
-                    sudo systemctl restart "$SERVICE_LABEL" 2>/dev/null || true
-                sleep 8
-            fi
+        # Apply backoff delay before restart
+        if [[ $backoff_delay -gt 0 ]]; then
+            log "INFO" "L3: Backoff delay ${backoff_delay}s before restart..."
+            sleep "$backoff_delay"
+        fi
+
+        # Step 1: Try kickstart (works even if process exited with 0)
+        if launchctl kickstart -k "$GATEWAY_LABEL" 2>/dev/null; then
+            log "INFO" "L3: kickstart issued, waiting 8s for startup..."
+            sleep 8
         else
-            log "WARN" "L3: No service label configured, cannot restart automatically"
-            issues+=("no_service_label")
+            # kickstart failed — try bootout+bootstrap
+            log "WARN" "L3: kickstart failed, trying bootout+bootstrap..."
+            launchctl bootout "$GATEWAY_LABEL" 2>/dev/null || true
+            sleep 2
+            launchctl bootstrap "gui/$(id -u)" "${HOME}/Library/LaunchAgents/ai.agent-system.gateway.plist" 2>/dev/null || true
+            sleep 8
         fi
 
         if check_process && check_port; then
-            fixed+=("service_restarted")
-            log "INFO" "L3: Restart successful (process + port verified)"
+            fixed+=("gateway_restarted")
+            log "INFO" "L3: Gateway restart #${TOTAL_RESTARTS} successful (process + port verified)"
+            save_metric "gateway_restart" 1 "attempt:${TOTAL_RESTARTS},backoff:${backoff_delay}"
         elif check_process; then
-            fixed+=("service_restarted_partial")
-            log "WARN" "L3: Process started but port not yet listening"
+            fixed+=("gateway_restarted_partial")
+            log "WARN" "L3: Gateway process started but port not yet listening (may need more time)"
         else
-            issues+=("restart_failed")
-            log "ERROR" "L3: Restart failed — all methods exhausted"
-        fi
-    fi
-
-    # Force restart on persistent failures
-    if [[ $FAIL_COUNT -ge $FORCE_RESTART_THRESHOLD ]] && ! $needs_restart; then
-        log "WARN" "L3: ${FAIL_COUNT} consecutive failures — forcing restart as last resort"
-        if [[ -n "$SERVICE_LABEL" ]]; then
-            if [[ "$(uname)" == "Darwin" ]]; then
-                launchctl kickstart -k "$SERVICE_LABEL" 2>/dev/null || true
-            else
-                systemctl --user restart "$SERVICE_LABEL" 2>/dev/null || true
-            fi
-            sleep 8
-            if check_process; then
-                fixed+=("force_restarted")
-                log "INFO" "L3: Force restart completed"
-            else
-                issues+=("force_restart_failed")
-                log "ERROR" "L3: Force restart also failed"
-            fi
+            issues+=("gateway_restart_failed")
+            log "ERROR" "L3: Gateway restart #${TOTAL_RESTARTS} failed — all methods exhausted"
         fi
     fi
 
@@ -406,97 +593,104 @@ run_l3_diagnostic() {
         log "INFO" "L3 summary — Issues: ${issues_str} | Fixed: ${fixed_str}"
         echo "${issues_str}"
 
+        # If we fixed something, give it a chance
         if [[ ${#fixed[@]} -gt 0 ]]; then
             return 0  # Fixed something, don't escalate yet
         fi
         return 1  # Couldn't fix, escalate
     fi
 
-    log "INFO" "L3: No system issues found, process may be idle"
+    # If L2 keeps failing but L3 can't find any system issue AND restart wasn't needed,
+    # still try a restart — the gateway might be in a weird state (log stale but process alive).
+    if [[ $FAIL_COUNT -ge $((L3_FAIL_THRESHOLD + 2)) ]]; then
+        TOTAL_RESTARTS=$((TOTAL_RESTARTS + 1))
+        local force_backoff
+        force_backoff="$(calculate_backoff "$TOTAL_RESTARTS")"
+        log "WARN" "L3: ${FAIL_COUNT} consecutive failures with no detected issues — force restart #${TOTAL_RESTARTS} (backoff: ${force_backoff}s)"
+
+        if [[ $force_backoff -gt 0 ]]; then
+            sleep "$force_backoff"
+        fi
+        launchctl kickstart -k "$GATEWAY_LABEL" 2>/dev/null || true
+        sleep 8
+        if check_process; then
+            fixed+=("gateway_force_restarted")
+            log "INFO" "L3: Force restart #${TOTAL_RESTARTS} completed"
+            save_metric "gateway_force_restart" 1 "attempt:${TOTAL_RESTARTS}"
+            echo "force_restarted"
+            return 0
+        else
+            log "ERROR" "L3: Force restart #${TOTAL_RESTARTS} also failed"
+            echo "force_restart_failed"
+            return 1
+        fi
+    fi
+
+    log "INFO" "L3: No system issues found, gateway may be idle"
     return 0
 }
 
-# === L4: Escalation ===
+# --- L4: Discord escalation ---
 run_l4_escalation() {
     local l2_failures="$1"
     local l3_issues="${2:-none}"
 
-    log "ERROR" "L4: Escalating to webhook alert"
+    log "ERROR" "L4: Escalating to Discord alert"
 
-    local message="Process health check FAILING\\n"
-    message+="Process: ${PROCESS_NAME}\\n"
-    message+="Port: ${WATCH_PORT}\\n"
+    local message="Gateway health check FAILING\\n"
     message+="Consecutive failures: ${FAIL_COUNT}\\n"
     message+="L2 failures: ${l2_failures}\\n"
     message+="L3 diagnostic: ${l3_issues}\\n"
     message+="Host: $(hostname)\\n"
     message+="Time: $(date '+%Y-%m-%d %H:%M:%S')"
 
-    send_alert "$message" "16711680"
-}
-
-# === Help ===
-show_help() {
-    cat <<'EOF'
-watchdog.sh — 4-Tier Self-Healing Process Monitor
-
-Usage: watchdog.sh [options]
-
-Options:
-  --help, -h             Show this help message
-
-Environment Variables:
-  WATCHDOG_PROCESS_NAME  Process name to monitor (default: my-agent)
-  WATCHDOG_PORT          TCP port to check (default: 8080, set 0 to disable)
-  WATCHDOG_LOG_PATH      Log file for freshness check (optional)
-  WATCHDOG_WEBHOOK_URL   Webhook URL for L4 alerts (optional)
-  WATCHDOG_SERVICE_LABEL Service label for restart (launchd/systemd)
-  WATCHDOG_LOG_FRESHNESS Log freshness threshold in seconds (default: 300)
-  WATCHDOG_L3_THRESHOLD  L2 failures before L3 diagnostic (default: 3)
-  WATCHDOG_ALERT_COOLDOWN Seconds between alerts (default: 1800)
-
-Tiers:
-  L1: External supervisor (launchd/systemd KeepAlive)
-  L2: Process, port, and log freshness checks
-  L3: System diagnostic + automatic restart
-  L4: Webhook alert escalation
-
-Examples:
-  # Monitor a process named "my-gateway" on port 3000
-  WATCHDOG_PROCESS_NAME=my-gateway WATCHDOG_PORT=3000 watchdog.sh
-
-  # With log freshness check and webhook alerts
-  WATCHDOG_PROCESS_NAME=my-agent \
-  WATCHDOG_PORT=8080 \
-  WATCHDOG_LOG_PATH=/var/log/my-agent.log \
-  WATCHDOG_WEBHOOK_URL=https://hooks.example.com/alert \
-  watchdog.sh
-
-  # Crontab entry (every minute)
-  * * * * * /path/to/watchdog.sh
-EOF
-    exit 0
+    send_discord_alert "$message" "16711680"
 }
 
 # ============================================================
 # MAIN
 # ============================================================
 main() {
-    [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && show_help
-
-    mkdir -p "$STATE_DIR"
-
     trim_log
-    log "INFO" "Watchdog check started (process=$PROCESS_NAME port=$WATCH_PORT)"
+    log "INFO" "Watchdog check started"
 
-    # Load webhook URL from file if env var not set
-    local webhook_file="$AEK_HOME/config/webhook-url.txt"
-    if [[ -z "$WEBHOOK_URL" && -f "$webhook_file" ]]; then
-        WEBHOOK_URL="$(cat "$webhook_file" | tr -d '[:space:]')"
+    # Load webhook
+    if [[ -f "$WEBHOOK_FILE" ]]; then
+        DISCORD_WEBHOOK_URL="$(cat "$WEBHOOK_FILE" | tr -d '[:space:]')"
     fi
+
+    # Load restart policy from config (BEFORE state load)
+    load_restart_policy "agent-system-gateway"
+    L3_FAIL_THRESHOLD="$POLICY_MAX_CONSECUTIVE_FAILURES"
 
     # Load previous state
     load_state
+
+    # --- Stability reset: if running long enough without failure, reset counters ---
+    if [[ $LAST_STABLE_TIME -gt 0 ]]; then
+        local stable_duration=$(( $(date +%s) - LAST_STABLE_TIME ))
+        if [[ $stable_duration -ge $POLICY_STABILITY_RESET_SECONDS && $FAIL_COUNT -eq 0 ]]; then
+            log "INFO" "Stability reset: agent stable for ${stable_duration}s (threshold: ${POLICY_STABILITY_RESET_SECONDS}s), resetting total_restarts"
+            TOTAL_RESTARTS=0
+            save_metric "stability_reset" 1 "stable_duration:${stable_duration}"
+        fi
+    fi
+
+    # --- PermanentlyDead check ---
+    if [[ $TOTAL_RESTARTS -ge $POLICY_MAX_RESTARTS ]]; then
+        log "ERROR" "PermanentlyDead: total_restarts (${TOTAL_RESTARTS}) >= max_restarts (${POLICY_MAX_RESTARTS}). Skipping restart."
+        if [[ "$POLICY_PERMANENTLY_DEAD_ACTION" == "alert_operator" ]]; then
+            send_discord_alert "PERMANENTLY DEAD: Gateway exceeded max restarts (${TOTAL_RESTARTS}/${POLICY_MAX_RESTARTS}). Manual intervention required." "16711680"
+        else
+            log "WARN" "PermanentlyDead action: ${POLICY_PERMANENTLY_DEAD_ACTION}"
+        fi
+        save_state "permanently_dead"
+        save_metric "permanently_dead" 1 "total_restarts:${TOTAL_RESTARTS}"
+        exit 0
+    fi
+
+    # --- Session bloat check (independent, non-blocking) ---
+    check_session_bloat 2>/dev/null || true
 
     # --- L2: Run health checks ---
     local l2_result=""
@@ -506,20 +700,25 @@ main() {
     if [[ $l2_exit -eq 0 ]]; then
         # All healthy
         if [[ $FAIL_COUNT -gt 0 ]]; then
-            log "INFO" "Process recovered after ${FAIL_COUNT} failures"
+            log "INFO" "Gateway recovered after ${FAIL_COUNT} failures"
             if [[ $FAIL_COUNT -ge $L3_FAIL_THRESHOLD ]]; then
-                send_alert "Process RECOVERED after ${FAIL_COUNT} consecutive failures" "65280"
+                send_discord_alert "Gateway RECOVERED after ${FAIL_COUNT} consecutive failures" "65280"
             fi
         fi
         FAIL_COUNT=0
+        # Track stable time: set when first healthy after failure, or keep existing
+        if [[ $LAST_STABLE_TIME -eq 0 ]]; then
+            LAST_STABLE_TIME=$(date +%s)
+        fi
         save_state "healthy"
-        save_metric "process_healthy" 1 "l2"
+        save_metric "gateway_healthy" 1 "l2"
         log "INFO" "L2: All checks passed"
         exit 0
     fi
 
-    # L2 failed
+    # L2 failed — reset stable time
     FAIL_COUNT=$((FAIL_COUNT + 1))
+    LAST_STABLE_TIME=0
     log "WARN" "L2 failed (consecutive: ${FAIL_COUNT}): ${l2_result}"
 
     # --- L3: Diagnostic (only if threshold reached) ---
@@ -530,10 +729,12 @@ main() {
 
         if [[ $l3_exit -eq 0 ]]; then
             # L3 fixed something or no critical issues
+            # Reset fail count so we don't keep running L3 every cycle
             FAIL_COUNT=0
             save_state "l3_remediated"
-            save_metric "process_restart" 1 "l3"
-            log "INFO" "L3 completed, fail count reset"
+            save_metric "gateway_restart" 1 "l3"
+            bash "$BLACKBOARD_SCRIPT" set "gateway:last_restart" "$(date +%s)" 2>/dev/null || true
+            log "INFO" "L3 completed, fail count reset, waiting for next check"
             exit 0
         fi
 
@@ -545,7 +746,7 @@ main() {
         log "INFO" "Waiting for threshold (${FAIL_COUNT}/${L3_FAIL_THRESHOLD}) before L3 diagnostic"
     fi
 
-    exit 0  # Always exit 0 to not trigger restart of watchdog itself
+    exit 0  # Always exit 0 to not trigger launchd restart of watchdog itself
 }
 
 main "$@"

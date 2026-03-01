@@ -1,27 +1,12 @@
-#!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
-#
-# skill-discovery.sh — Capability gap detection, skill tracking, and composition
-#
-# Tracks which skills are used, their success rates, identifies gaps from
-# failed trajectories, and suggests new skill combinations.
-#
-# Usage:
-#   skill-discovery.sh gap-log <description>                  Log a capability gap
-#   skill-discovery.sh gaps                                   List gaps by frequency
-#   skill-discovery.sh track <skill> <success|failure> [ms]   Track skill usage
-#   skill-discovery.sh performance                            Performance report
-#   skill-discovery.sh compose <name> <skill1> <skill2> ...   Create composite skill
-#   skill-discovery.sh compositions                           List composites
-#   skill-discovery.sh suggest                                Suggest new skills
-#   skill-discovery.sh report                                 Overall coverage report
-
+#!/bin/bash
+# STANDBY: Yetenek kesfi ve gap analizi — manual kullanim. Gelecekte weekly-cycle entegrasyonu.
+# skill-discovery.sh — Capability gap detection and skill composition
+# Usage: skill-discovery.sh <command> [args]
 set -euo pipefail
 
-# === Configuration ===
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
-MEMORY_DIR="$AEK_HOME/memory"
-SKILLS_DIR="$AEK_HOME/skills"
+# ─── Config ───────────────────────────────────────────────────────────────────
+MEMORY_DIR="$HOME/clawd/memory"
+SKILLS_DIR="$HOME/clawd/skills"
 GAP_LOG="$MEMORY_DIR/skill-gaps.jsonl"
 METRICS_LOG="$MEMORY_DIR/skill-metrics.jsonl"
 COMPOSITIONS_FILE="$SKILLS_DIR/compositions.json"
@@ -54,25 +39,24 @@ with open(f, "w") as fh:
 PYEOF
 fi
 
-# === Helpers ===
+# ─── Helpers ──────────────────────────────────────────────────────────────────
 now_ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 usage() {
     cat <<EOF
-skill-discovery.sh — Capability Gap Detection & Skill Composition
+skill-discovery.sh — Capability gap detection & skill composition
 
-Commands:
-  gap-log <description>                       Log a capability gap
-  gaps                                        List gaps sorted by frequency
-  track <skill> <success|failure> [dur_ms]    Track skill execution
-  performance                                 Performance report (last 30 days)
-  compose <name> <skill1> <skill2> [...]      Create composite skill
-  compositions                                List composite skills
-  suggest                                     Suggest new skills based on gaps
-  report                                      Overall skill coverage report
+Komutlar:
+  gap-log <description>                       Eksik yetenek kaydet
+  gaps                                        Eksiklikleri sirayla goster
+  track <skill> <success|failure> [dur_ms]    Skill calismasini kaydet
+  performance                                 Performans raporu
+  compose <name> <skill1> <skill2> [...]      Bilesik skill olustur
+  compositions                                Bilesik skill listesi
+  suggest                                     Yeni skill onerileri
 
-Examples:
-  $0 gap-log "Cannot automatically check competitor prices"
+Ornekler:
+  $0 gap-log "Rakip fiyat otomatik kontrol edilemiyor"
   $0 track nightly-scan success 45200
   $0 compose price-monitor competitor-scan price-compare notify
   $0 performance
@@ -81,14 +65,14 @@ EOF
     exit 0
 }
 
-# === Commands ===
+# ─── Commands ─────────────────────────────────────────────────────────────────
 
 cmd_gap_log() {
     local desc="${1:-}"
 
     if [[ -z "$desc" ]]; then
-        echo "Error: Description is required."
-        echo "Usage: $0 gap-log <description>"
+        echo "Hata: Aciklama gerekli."
+        echo "Kullanim: $0 gap-log <description>"
         exit 1
     fi
 
@@ -99,6 +83,7 @@ gap_file = sys.argv[1]
 desc = sys.argv[2]
 ts = sys.argv[3]
 
+# Check if similar gap exists (increment frequency)
 lines = []
 found = False
 with open(gap_file, "r") as f:
@@ -107,6 +92,7 @@ with open(gap_file, "r") as f:
         if not line:
             continue
         entry = json.loads(line)
+        # Simple similarity: exact description match
         if entry["description"].lower() == desc.lower():
             entry["frequency"] = entry.get("frequency", 1) + 1
             entry["lastSeen"] = ts
@@ -126,9 +112,9 @@ with open(gap_file, "w") as f:
     f.write("\n".join(lines) + "\n")
 
 if found:
-    print(f"Gap updated (frequency incremented): {desc}")
+    print(f"Gap guncellendi (frekans artti): {desc}")
 else:
-    print(f"Gap logged: {desc}")
+    print(f"Gap kaydedildi: {desc}")
 PYEOF
 }
 
@@ -147,21 +133,22 @@ with open(gap_file, "r") as f:
         entries.append(json.loads(line))
 
 if not entries:
-    print("No gaps recorded.")
+    print("Kayitli gap yok.")
     sys.exit(0)
 
+# Sort by frequency descending
 entries.sort(key=lambda x: x.get("frequency", 1), reverse=True)
 
-print("Capability Gaps (by frequency)")
+print("Capability Gaps (frekansa gore)")
 print("=" * 50)
 for e in entries:
     freq = e.get("frequency", 1)
-    bar = "#" * min(freq, 20)
+    bar = "█" * min(freq, 20)
     ctx = f" [{e['context']}]" if e.get("context") else ""
     date = e.get("lastSeen", e.get("ts", "?"))[:10]
     print(f"  {freq:>3}x {bar:<20} {e['description']}{ctx} ({date})")
 
-print(f"\nTotal: {len(entries)} gaps")
+print(f"\nToplam: {len(entries)} gap")
 PYEOF
 }
 
@@ -172,13 +159,13 @@ cmd_track() {
     local agent="${4:-}"
 
     if [[ -z "$skill" || -z "$status" ]]; then
-        echo "Error: skill and status are required."
-        echo "Usage: $0 track <skill> <success|failure> [duration_ms] [agent]"
+        echo "Hata: skill ve status gerekli."
+        echo "Kullanim: $0 track <skill> <success|failure> [duration_ms] [agent]"
         exit 1
     fi
 
     if [[ "$status" != "success" && "$status" != "failure" ]]; then
-        echo "Error: status must be 'success' or 'failure'."
+        echo "Hata: status 'success' veya 'failure' olmali."
         exit 1
     fi
 
@@ -205,7 +192,7 @@ with open(metrics_file, "a") as f:
     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 dur_str = f" ({duration}ms)" if duration > 0 else ""
-print(f"Recorded: {skill} -- {status}{dur_str}")
+print(f"Kaydedildi: {skill} — {status}{dur_str}")
 PYEOF
 }
 
@@ -225,18 +212,20 @@ with open(metrics_file, "r") as f:
         if not line:
             continue
         entry = json.loads(line)
+        # Parse timestamp
         ts_str = entry.get("ts", "")
         try:
             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
             if ts >= cutoff:
                 entries.append(entry)
         except (ValueError, TypeError):
-            entries.append(entry)
+            entries.append(entry)  # Include if can't parse date
 
 if not entries:
-    print("No metrics in the last 30 days.")
+    print("Son 30 gunde metrik yok.")
     sys.exit(0)
 
+# Aggregate by skill
 skills = {}
 for e in entries:
     name = e["skill"]
@@ -250,10 +239,12 @@ for e in entries:
     if dur > 0:
         skills[name]["durations"].append(dur)
 
-print("Skill Performance Report (last 30 days)")
+print("Skill Performance Report (son 30 gun)")
 print("-" * 50)
 
+# Sort by total executions descending
 sorted_skills = sorted(skills.items(), key=lambda x: x[1]["success"] + x[1]["failure"], reverse=True)
+
 max_name_len = max(len(name) for name, _ in sorted_skills) if sorted_skills else 15
 
 for name, data in sorted_skills:
@@ -261,7 +252,7 @@ for name, data in sorted_skills:
     rate = data["success"] / total * 100 if total > 0 else 0
     bar_width = 10
     filled = int(rate * bar_width / 100)
-    bar = "#" * filled + "." * (bar_width - filled)
+    bar = "█" * filled + "░" * (bar_width - filled)
 
     avg_dur = ""
     if data["durations"]:
@@ -275,7 +266,7 @@ for name, data in sorted_skills:
 
     print(f"  {name:<{max_name_len}} {bar} {rate:>4.0f}% ({data['success']}/{total}){avg_dur}")
 
-print(f"\nTotal: {len(sorted_skills)} skills, {sum(s['success']+s['failure'] for _,s in sorted_skills)} executions")
+print(f"\nToplam: {len(sorted_skills)} skill, {sum(s['success']+s['failure'] for _,s in sorted_skills)} calisma")
 PYEOF
 }
 
@@ -285,11 +276,12 @@ cmd_compose() {
     local components=("$@")
 
     if [[ -z "$name" || ${#components[@]} -lt 2 ]]; then
-        echo "Error: Name and at least 2 skills are required."
-        echo "Usage: $0 compose <name> <skill1> <skill2> [skill3...]"
+        echo "Hata: Isim ve en az 2 skill gerekli."
+        echo "Kullanim: $0 compose <name> <skill1> <skill2> [skill3...]"
         exit 1
     fi
 
+    # Convert array to JSON-safe format
     local components_json
     components_json=$(printf '%s\n' "${components[@]}" | python3 -c "import sys,json; print(json.dumps([l.strip() for l in sys.stdin]))")
 
@@ -304,9 +296,10 @@ ts = sys.argv[4]
 with open(comp_file) as f:
     data = json.load(f)
 
+# Check for duplicate name
 for c in data.get("compositions", []):
     if c["name"] == name:
-        print(f"Error: '{name}' already exists.")
+        print(f"Hata: '{name}' zaten mevcut.")
         sys.exit(1)
 
 new_comp = {
@@ -323,8 +316,8 @@ data["metadata"]["lastModified"] = ts
 with open(comp_file, "w") as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
 
-print(f"Composite skill created: {name}")
-print(f"  Components: {' + '.join(components)}")
+print(f"Bilesik skill olusturuldu: {name}")
+print(f"  Bilesenler: {' + '.join(components)}")
 PYEOF
 }
 
@@ -337,10 +330,10 @@ with open(sys.argv[1]) as f:
 
 compositions = data.get("compositions", [])
 if not compositions:
-    print("No composite skills registered.")
+    print("Kayitli bilesik skill yok.")
     sys.exit(0)
 
-print("Composite Skill Registry")
+print("Bilesik Skill Listesi")
 print("=" * 50)
 for c in compositions:
     components = " + ".join(c["components"])
@@ -351,11 +344,11 @@ for c in compositions:
     else:
         last = "-"
     print(f"  {c['name']}")
-    print(f"    Components: {components}")
-    print(f"    Executions: {count}x | Last used: {last}")
+    print(f"    Bilesenler: {components}")
+    print(f"    Kullanim: {count}x | Son: {last}")
     print()
 
-print(f"Total: {len(compositions)} composite skills")
+print(f"Toplam: {len(compositions)} bilesik skill")
 PYEOF
 }
 
@@ -404,35 +397,39 @@ if os.path.getsize(metrics_file) > 0:
                 skill_stats[name] = {"success": 0, "failure": 0}
             skill_stats[name][e["status"]] = skill_stats[name].get(e["status"], 0) + 1
 
-print("Skill Suggestions")
+# Analyze
+print("Skill Onerileri")
 print("=" * 50)
 
 if not gaps:
-    print("No gaps recorded -- use gap-log command to record capability gaps.")
+    print("Kayitli gap yok — gap-log komutuyla eksiklik kaydedin.")
     sys.exit(0)
 
+# Sort by frequency
 gaps.sort(key=lambda x: x.get("frequency", 1), reverse=True)
 
 print()
-print("1. Priority Gaps (by frequency):")
+print("1. Oncelikli Gaplar (frekans sirasiyla):")
 print("-" * 40)
 for g in gaps[:10]:
     freq = g.get("frequency", 1)
     desc = g["description"]
-    priority = "HIGH" if freq >= 5 else ("MEDIUM" if freq >= 2 else "LOW")
+    priority = "YUKSEK" if freq >= 5 else ("ORTA" if freq >= 2 else "DUSUK")
     print(f"  [{priority}] {desc} ({freq}x)")
 
 # Suggest combinations
 print()
-print("2. Possible Skill Combinations:")
+print("2. Olasi Skill Birlesimleri:")
 print("-" * 40)
 skill_list = sorted(existing_skills)
 suggested_any = False
 
+# Simple keyword matching between gaps and skills
 for g in gaps[:5]:
     desc_lower = g["description"].lower()
     matching_skills = []
     for s in skill_list:
+        # Check if any word from skill name appears in gap description
         s_words = s.replace("-", " ").replace("_", " ").split()
         for w in s_words:
             if len(w) > 3 and w.lower() in desc_lower:
@@ -443,30 +440,32 @@ for g in gaps[:5]:
         suggested_any = True
         combo = " + ".join(matching_skills[:3])
         print(f"  Gap: \"{g['description']}\"")
-        print(f"  Suggestion: [{combo}] could address this")
+        print(f"  Oneri: [{combo}] birlestirilerek cozulebilir")
         print()
 
 if not suggested_any:
-    print("  No automatic combinations found from existing skills.")
-    print("  Use 'compose' command to create combinations manually.")
+    print("  Mevcut skill'lerle otomatik kombinasyon onerisi bulunamadi.")
+    print("  Manuel olarak 'compose' komutuyla olusturabilirsiniz.")
 
 # Suggest new standalone skills
 print()
-print("3. New Skill Suggestions:")
+print("3. Yeni Skill Onerileri:")
 print("-" * 40)
 for g in gaps[:5]:
     desc = g["description"]
     freq = g.get("frequency", 1)
+    # Generate a slug-style name suggestion
     words = desc.lower().replace(",", "").replace(".", "").split()
-    stop_words = {"the", "a", "an", "is", "are", "to", "of", "in", "for", "not",
-                  "can", "cannot", "can't", "automatically", "be", "this", "that",
-                  "with", "from", "and", "or", "but", "no", "has", "have", "does"}
+    # Filter common words
+    stop_words = {"bir", "bu", "ve", "ile", "icin", "olmak", "olmayan", "cannot", "can't",
+                  "the", "a", "an", "is", "are", "to", "of", "in", "for", "not", "automatically",
+                  "otomatik", "edilemiyor", "yapilamiyor", "sekilde"}
     key_words = [w for w in words if w not in stop_words and len(w) > 2][:3]
     slug = "-".join(key_words) if key_words else "new-skill"
 
     if slug not in existing_skills and slug not in comp_names:
-        print(f"  Suggestion: create '{slug}' skill")
-        print(f"    Source: \"{desc}\" ({freq}x)")
+        print(f"  Oneri: '{slug}' skill'i olusturulmali")
+        print(f"    Kaynagi: \"{desc}\" ({freq}x)")
         print()
 
 # Failing skills
@@ -479,56 +478,17 @@ for name, stats in skill_stats.items():
 
 if failing:
     print()
-    print("4. Underperforming Skills (>30% failure rate):")
+    print("4. Sorunlu Skill'ler (>30% basarisizlik):")
     print("-" * 40)
     failing.sort(key=lambda x: x[1], reverse=True)
     for name, rate, total in failing:
-        print(f"  {name}: {rate:.0f}% failure ({total} executions) -- consider rewriting")
+        print(f"  {name}: %{rate:.0f} basarisiz ({total} calisma) — iyilestirme veya yeniden yazma onerisi")
 
 print()
 PYEOF
 }
 
-cmd_report() {
-    echo "## Skill Coverage Report"
-    echo "### $(date '+%Y-%m-%d %H:%M')"
-    echo ""
-
-    # Skill count
-    local skill_count
-    skill_count=$(find "$SKILLS_DIR" -maxdepth 1 -not -name "compositions.json" -not -name "." 2>/dev/null | wc -l | tr -d ' ')
-    echo "  Registered skills: $skill_count"
-
-    # Gap count
-    local gap_count=0
-    if [[ -s "$GAP_LOG" ]]; then
-        gap_count=$(wc -l < "$GAP_LOG" | tr -d ' ')
-    fi
-    echo "  Open gaps: $gap_count"
-
-    # Composition count
-    local comp_count
-    comp_count=$(python3 - "$COMPOSITIONS_FILE" <<'PYEOF'
-import json, sys
-try:
-    with open(sys.argv[1]) as f:
-        print(len(json.load(f).get('compositions', [])))
-except:
-    print(0)
-PYEOF
-)
-    echo "  Composite skills: $comp_count"
-
-    echo ""
-    echo "### Performance Summary"
-    cmd_performance 2>/dev/null || echo "  No performance data available."
-
-    echo ""
-    echo "### Top Gaps"
-    cmd_gaps 2>/dev/null || echo "  No gaps recorded."
-}
-
-# === Main ===
+# ─── Main ─────────────────────────────────────────────────────────────────────
 cmd="${1:-}"
 shift || true
 
@@ -540,10 +500,9 @@ case "$cmd" in
     compose)        cmd_compose "$@" ;;
     compositions)   cmd_compositions ;;
     suggest)        cmd_suggest ;;
-    report)         cmd_report ;;
     -h|--help|"")   usage ;;
     *)
-        echo "Unknown command: $cmd"
+        echo "Bilinmeyen komut: $cmd"
         usage
         ;;
 esac

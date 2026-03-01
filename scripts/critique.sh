@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
-#
 # critique.sh — Cross-Agent Critique (MAR Pattern)
-# Multi-agent review: one agent evaluates another agent's output.
+# Multi-agent review: bir agent, diger agent'in ciktisini degerlendirir.
 #
-# Based on: MAR (arxiv 2512.20845), docs/cross-agent-critique.md
+# Kaynak: MAR (arxiv 2512.20845), docs/cross-agent-critique.md
 #
-# Usage:
+# Kullanim:
 #   critique.sh --output <file> --agent <producer>
 #   critique.sh --matrix
 #   critique.sh --batch
 set -euo pipefail
 
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
+AEK_HOME="${AEK_HOME:-$HOME/clawd}"
 BRIDGE="$AEK_HOME/scripts/bridge.sh"
 CRITIQUE_DIR="$AEK_HOME/memory/critiques"
 TRAJECTORY="$AEK_HOME/memory/trajectory-pool.json"
@@ -21,7 +19,7 @@ MAX_DAILY_CRITIQUES=5
 MAX_CONTENT_CHARS=2000
 MAX_BATCH_ITEMS=3
 
-# --- Colors ---
+# --- Renkler ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -35,40 +33,40 @@ err() { echo -e "${RED}[critique]${NC} $1" >&2; }
 
 mkdir -p "$CRITIQUE_DIR"
 
-# --- Critique Matrix ---
+# --- Critique Matrisi ---
 # Format: PRODUCER:CRITIC:AREA
 CRITIQUE_MATRIX=(
-    "researcher-agent:analyst-agent:Research depth, source diversity"
-    "social-agent:writer-agent:Tone, engagement, accuracy"
-    "financial-agent:guardian-agent:Risk assessment, assumptions"
-    "writer-agent:social-agent:Social media fit"
-    "analyst-agent:researcher-agent:Completeness, missing areas"
-    "metrics-agent:guardian-agent:Measurement accuracy"
+    "scout:analyst:Research depth, source diversity"
+    "social-agent:writer:Tone, engagement, accuracy"
+    "finance-agent:guardian:Risk assessment, assumptions"
+    "writer:social-agent:Social media fit"
+    "analyst:scout:Completeness, missing areas"
+    "analytics-agent:guardian:Measurement accuracy"
 )
-DEFAULT_CRITIC="orchestrator"
+DEFAULT_CRITIC="oracle"
 DEFAULT_AREA="General quality review"
 
-# --- Helper Functions ---
+# --- Yardimci Fonksiyonlar ---
 
-# Count today's critiques
+# Bugunun critique sayisini say
 count_today_critiques() {
     find "$CRITIQUE_DIR" -maxdepth 1 -name "${TODAY}-*.md" -type f 2>/dev/null | wc -l | tr -d ' '
 }
 
-# Daily limit check
+# Gunluk limit kontrolu
 check_daily_limit() {
     local count
     count=$(count_today_critiques)
     if [[ "$count" -ge "$MAX_DAILY_CRITIQUES" ]]; then
-        err "Daily critique limit exceeded ($count/$MAX_DAILY_CRITIQUES). Try again tomorrow."
+        err "Gunluk critique limiti asildi ($count/$MAX_DAILY_CRITIQUES). Yarin tekrar deneyin."
         exit 1
     fi
     local remaining=$((MAX_DAILY_CRITIQUES - count))
-    log "Daily critiques: $count/$MAX_DAILY_CRITIQUES (remaining: $remaining)"
+    log "Gunluk critique: $count/$MAX_DAILY_CRITIQUES (kalan: $remaining)"
     echo "$remaining"
 }
 
-# Find critic and area from matrix
+# Matris'ten critic ve area bul
 lookup_critic() {
     local producer="$1"
     local producer_lower
@@ -88,15 +86,15 @@ lookup_critic() {
     return 0
 }
 
-# Check bridge availability
+# Bridge varligini kontrol et
 check_bridge() {
     if [[ ! -x "$BRIDGE" ]]; then
-        err "bridge.sh not found: $BRIDGE"
+        err "bridge.sh bulunamadi: $BRIDGE"
         exit 127
     fi
 }
 
-# Extract verdict (APPROVE / SUGGEST / FLAG)
+# Verdict cikart (APPROVE / SUGGEST / FLAG)
 parse_verdict() {
     local critique_text="$1"
     if echo "$critique_text" | grep -qi "Verdict.*APPROVE"; then
@@ -110,89 +108,89 @@ parse_verdict() {
     fi
 }
 
-# --- Usage ---
+# --- Kullanim ---
 usage() {
     cat >&2 <<'EOF'
-Cross-Agent Critique — MAR Pattern
+Oracle Cross-Agent Critique — MAR Pattern
 
-Usage:
-  critique.sh --output <file> --agent <producer>   Evaluate an output
-  critique.sh --matrix                              Show the critique matrix
-  critique.sh --batch                               Evaluate recent high-impact tasks
+Kullanim:
+  critique.sh --output <file> --agent <producer>   Ciktiyi degerlendir
+  critique.sh --matrix                              Matrisi goster
+  critique.sh --batch                               Son yuksek etkili gorevleri degerlendir
 
-Options:
-  --output <file>    File path to evaluate
-  --agent <name>     Producer agent name (researcher-agent, social-agent, financial-agent, etc.)
-  --matrix           Show critique assignment matrix
-  --batch            Evaluate high-impact tasks from last 7 days of trajectory pool
-  --help, -h         Show this help message
+Secenekler:
+  --output <file>    Degerlendirilecek dosya yolu
+  --agent <name>     Ureticinin agent adi (scout, social-agent, finance-agent, writer, analyst, analytics-agent)
+  --matrix           Critique eslestirme matrisini goster
+  --batch            Trajectory pool'dan son 7 gunun yuksek etkili gorevlerini degerlendir
+  --help, -h         Bu yardim mesajini goster
 
-Examples:
-  critique.sh --output memory/reflections/researcher-agent/2026-03-01.md --agent researcher-agent
+Ornek:
+  critique.sh --output ~/.agent-evolution/memory/reflections/scout/2026-03-01-scout.md --agent scout
   critique.sh --batch
 EOF
     exit 1
 }
 
-# --- --matrix command ---
+# --- --matrix komutu ---
 cmd_matrix() {
     echo ""
-    echo -e "${BOLD}  Cross-Agent Critique Matrix (MAR Pattern)${NC}"
+    echo -e "${BOLD}  Cross-Agent Critique Matrisi (MAR Pattern)${NC}"
     echo -e "  ${CYAN}============================================${NC}"
     echo ""
-    printf "  ${BOLD}%-20s  %-18s  %s${NC}\n" "Producer" "Reviewer" "Focus Area"
-    printf "  %-20s  %-18s  %s\n" "--------" "--------" "----------"
+    printf "  ${BOLD}%-12s  %-10s  %s${NC}\n" "Uretici" "Elestirmen" "Kontrol Alani"
+    printf "  %-12s  %-10s  %s\n" "--------" "----------" "-------------"
     for entry in "${CRITIQUE_MATRIX[@]}"; do
         local p c a
         p=$(echo "$entry" | cut -d: -f1)
         c=$(echo "$entry" | cut -d: -f2)
         a=$(echo "$entry" | cut -d: -f3-)
-        printf "  %-20s  %-18s  %s\n" "$p" "$c" "$a"
+        printf "  %-12s  %-10s  %s\n" "$p" "$c" "$a"
     done
-    printf "  %-20s  %-18s  %s\n" "* (other)" "$DEFAULT_CRITIC" "$DEFAULT_AREA"
+    printf "  %-12s  %-10s  %s\n" "* (diger)" "$DEFAULT_CRITIC" "$DEFAULT_AREA"
     echo ""
-    echo -e "  ${YELLOW}Daily limit: $MAX_DAILY_CRITIQUES | Today: $(count_today_critiques)${NC}"
+    echo -e "  ${YELLOW}Gunluk limit: $MAX_DAILY_CRITIQUES | Bugun: $(count_today_critiques)${NC}"
     echo ""
 }
 
-# --- --output --agent command ---
+# --- --output --agent komutu ---
 cmd_critique() {
     local output_file="$1"
     local producer="$2"
 
-    # File check
+    # Dosya kontrolu
     if [[ ! -f "$output_file" ]]; then
-        err "File not found: $output_file"
+        err "Dosya bulunamadi: $output_file"
         exit 1
     fi
 
     check_bridge
 
-    # Daily limit
+    # Gunluk limit
     local remaining
     remaining=$(check_daily_limit)
     if [[ "$remaining" -le 0 ]]; then
         exit 1
     fi
 
-    # Find critic and area
+    # Critic ve area bul
     local lookup_result critic area
     lookup_result=$(lookup_critic "$producer")
     critic=$(echo "$lookup_result" | cut -d: -f1)
     area=$(echo "$lookup_result" | cut -d: -f2-)
 
-    log "Producer: $producer | Reviewer: $critic | Focus: $area"
+    log "Uretici: $producer | Elestirmen: $critic | Alan: $area"
 
-    # Read content (max 2000 chars)
+    # Icerik oku (max 2000 karakter)
     local content
     content=$(head -c "$MAX_CONTENT_CHARS" "$output_file")
 
     if [[ -z "$content" ]]; then
-        err "File is empty: $output_file"
+        err "Dosya bos: $output_file"
         exit 1
     fi
 
-    # Build critique prompt
+    # Critique prompt olustur
     local prompt
     prompt="You are acting as ${critic} agent, reviewing ${producer}'s output.
 Focus area: ${area}
@@ -211,77 +209,77 @@ Provide a concise critique (max 100 words) in this format:
 ## Recommendation (if any)
 - ..."
 
-    # Call bridge (--quick --text --silent)
-    log "Calling bridge (haiku, quick mode)..."
+    # Bridge cagir (--quick --text --silent)
+    log "Bridge cagriliyor (haiku, quick mode)..."
     local result
-    result=$(BRIDGE_CALLER="critique-${critic}" "$BRIDGE" --quick --text --silent "$prompt" 2>/dev/null) || {
+    result=$(ORACLE_CALLER="critique-${critic}" "$BRIDGE" --quick --text --silent "$prompt" 2>/dev/null) || {
         local exit_code=$?
-        err "Bridge call failed (exit: $exit_code)"
+        err "Bridge cagrisi basarisiz (exit: $exit_code)"
         exit "$exit_code"
     }
 
     if [[ -z "$result" ]]; then
-        err "Bridge returned empty output"
+        err "Bridge bos cikti dondu"
         exit 1
     fi
 
-    # Save to file
+    # Dosyaya kaydet
     local critique_file="${CRITIQUE_DIR}/${TODAY}-${producer}-${critic}.md"
     {
         echo "# Critique: ${TODAY} - ${critic} reviews ${producer}"
         echo ""
-        echo "**File:** $(basename "$output_file")"
-        echo "**Reviewer:** ${critic} | **Focus:** ${area}"
+        echo "**Dosya:** $(basename "$output_file")"
+        echo "**Elestirmen:** ${critic} | **Alan:** ${area}"
         echo ""
         echo "$result"
     } > "$critique_file"
 
-    log "Critique saved: $critique_file"
+    log "Critique kaydedildi: $critique_file"
 
-    # Extract verdict
+    # Verdict cikart
     local verdict
     verdict=$(parse_verdict "$result")
 
-    # Show summary
+    # Ozet goster
     echo ""
-    echo -e "${BOLD}  Critique Result${NC}"
+    echo -e "${BOLD}  Critique Sonucu${NC}"
     echo -e "  ${CYAN}=================${NC}"
-    echo -e "  Producer:  ${producer}"
-    echo -e "  Reviewer:  ${critic}"
-    echo -e "  Focus:     ${area}"
+    echo -e "  Uretici:    ${producer}"
+    echo -e "  Elestirmen: ${critic}"
+    echo -e "  Alan:       ${area}"
     case "$verdict" in
-        APPROVE) echo -e "  Verdict:   ${GREEN}${verdict}${NC}" ;;
-        SUGGEST) echo -e "  Verdict:   ${YELLOW}${verdict}${NC}" ;;
-        FLAG)    echo -e "  Verdict:   ${RED}${verdict}${NC}" ;;
-        *)       echo -e "  Verdict:   ${verdict}" ;;
+        APPROVE) echo -e "  Verdict:    ${GREEN}${verdict}${NC}" ;;
+        SUGGEST) echo -e "  Verdict:    ${YELLOW}${verdict}${NC}" ;;
+        FLAG)    echo -e "  Verdict:    ${RED}${verdict}${NC}" ;;
+        *)       echo -e "  Verdict:    ${verdict}" ;;
     esac
-    echo -e "  File:      ${critique_file}"
+    echo -e "  Dosya:      ${critique_file}"
     echo ""
 
-    # Show critique content
+    # Critique icerigini goster
     echo "$result"
 }
 
-# --- --batch command ---
+# --- --batch komutu ---
 cmd_batch() {
     check_bridge
 
-    # Daily limit
+    # Gunluk limit
     local remaining
     remaining=$(check_daily_limit)
     if [[ "$remaining" -le 0 ]]; then
         exit 1
     fi
 
-    # Trajectory pool check
+    # Trajectory pool kontrolu
     if [[ ! -f "$TRAJECTORY" ]]; then
-        err "Trajectory pool not found: $TRAJECTORY"
+        err "Trajectory pool bulunamadi: $TRAJECTORY"
         exit 1
     fi
 
-    log "Searching for high-impact tasks from last 7 days in trajectory pool..."
+    log "Trajectory pool'dan son 7 gunun yuksek etkili gorevleri arastiriliyor..."
 
-    # Parse trajectory with Python — last 7 days, high cost/duration, known producer
+    # Python ile trajectory parse et — son 7 gun, yuksek cost/duration, bilinen producer
     local batch_items
     batch_items=$(python3 - "$TRAJECTORY" "$MAX_BATCH_ITEMS" <<'PYEOF'
 import json, sys, os
@@ -290,11 +288,8 @@ from datetime import datetime, timedelta
 trajectory_file = sys.argv[1]
 max_items = int(sys.argv[2])
 
-# Known producers in the matrix
-known_producers = {
-    "researcher-agent", "analyst-agent", "social-agent",
-    "writer-agent", "financial-agent", "guardian-agent", "metrics-agent"
-}
+# Matristeki bilinen producer'lar
+known_producers = {"scout", "analyst", "social-agent", "writer", "finance-agent", "guardian", "analytics-agent"}
 
 try:
     with open(trajectory_file) as f:
@@ -319,13 +314,13 @@ for e in entries:
     except (ValueError, TypeError):
         continue
 
-    # Only last 7 days
+    # Sadece son 7 gun
     if dt.replace(tzinfo=None) < cutoff:
         continue
 
-    # Agent/caller info
+    # Agent/caller bilgisi
     agent = e.get("agent", e.get("caller", "")).lower()
-    # Does the agent name match a known producer?
+    # Agent adinda bilinen producer var mi?
     matched_producer = None
     for p in known_producers:
         if p in agent:
@@ -335,7 +330,7 @@ for e in entries:
     if not matched_producer:
         continue
 
-    # Impact score: cost + duration based
+    # Yuksek etki skoru: cost + duration bazli
     cost = float(e.get("cost_usd", e.get("cost", 0)) or 0)
     duration = int(e.get("duration_s", 0) or 0)
     tokens = int(e.get("tokens_used", 0) or 0)
@@ -352,10 +347,10 @@ for e in entries:
         "id": e.get("id", "unknown")
     })
 
-# Sort by highest impact
+# En yuksek impact'e gore sirala
 candidates.sort(key=lambda x: x["impact"], reverse=True)
 
-# Take first N
+# Ilk N tanesini al
 for item in candidates[:max_items]:
     # TAB-separated: producer\ttask\tid
     print(f"{item['producer']}\t{item['task']}\t{item['id']}")
@@ -363,30 +358,30 @@ PYEOF
     ) || true
 
     if [[ -z "$batch_items" ]]; then
-        log "No high-impact tasks from known producers found in last 7 days."
+        log "Son 7 gunde yuksek etkili, bilinen producer'a ait gorev bulunamadi."
         exit 0
     fi
 
     local count=0
     while IFS=$'\t' read -r producer task traj_id; do
-        # Re-check daily limit
+        # Gunluk limit tekrar kontrol
         local current_count
         current_count=$(count_today_critiques)
         if [[ "$current_count" -ge "$MAX_DAILY_CRITIQUES" ]]; then
-            warn "Daily limit exceeded, skipping remaining batch."
+            warn "Gunluk limit asildi, kalan batch atlanacak."
             break
         fi
 
         count=$((count + 1))
-        log "Batch [$count]: evaluating $producer task (traj: $traj_id)"
+        log "Batch [$count]: $producer gorevi degerlendirilecek (traj: $traj_id)"
 
-        # Find critic and area
+        # Critic ve area bul
         local lookup_result critic area
         lookup_result=$(lookup_critic "$producer")
         critic=$(echo "$lookup_result" | cut -d: -f1)
         area=$(echo "$lookup_result" | cut -d: -f2-)
 
-        # Prompt — use trajectory task content instead of file
+        # Prompt — dosya yerine trajectory task icerigini kullan
         local prompt
         prompt="You are acting as ${critic} agent, reviewing ${producer}'s output.
 Focus area: ${area}
@@ -406,19 +401,19 @@ Provide a concise critique (max 100 words) in this format:
 - ..."
 
         local result
-        result=$(BRIDGE_CALLER="critique-batch-${critic}" "$BRIDGE" --quick --text --silent "$prompt" 2>/dev/null) || {
-            warn "Batch critique failed: $producer ($traj_id), skipping."
+        result=$(ORACLE_CALLER="critique-batch-${critic}" "$BRIDGE" --quick --text --silent "$prompt" 2>/dev/null) || {
+            warn "Batch critique basarisiz: $producer ($traj_id), atlaniyor."
             continue
         }
 
         if [[ -z "$result" ]]; then
-            warn "Batch critique empty output: $producer ($traj_id), skipping."
+            warn "Batch critique bos cikti: $producer ($traj_id), atlaniyor."
             continue
         fi
 
-        # Save
+        # Kaydet
         local critique_file="${CRITIQUE_DIR}/${TODAY}-${producer}-${critic}-batch.md"
-        # If same file exists, add suffix
+        # Ayni dosya varsa suffix ekle
         if [[ -f "$critique_file" ]]; then
             critique_file="${CRITIQUE_DIR}/${TODAY}-${producer}-${critic}-batch-${count}.md"
         fi
@@ -426,7 +421,7 @@ Provide a concise critique (max 100 words) in this format:
             echo "# Batch Critique: ${TODAY} - ${critic} reviews ${producer}"
             echo ""
             echo "**Trajectory:** ${traj_id}"
-            echo "**Reviewer:** ${critic} | **Focus:** ${area}"
+            echo "**Elestirmen:** ${critic} | **Alan:** ${area}"
             echo ""
             echo "$result"
         } > "$critique_file"
@@ -444,7 +439,7 @@ Provide a concise critique (max 100 words) in this format:
     done <<< "$batch_items"
 
     echo ""
-    log "Batch completed: $count tasks evaluated."
+    log "Batch tamamlandi: $count gorev degerlendirildi."
 }
 
 # --- ARG PARSE ---
@@ -459,11 +454,11 @@ while [[ $# -gt 0 ]]; do
         --output)   OUTPUT_FILE="$2"; shift 2 ;;
         --agent)    AGENT_NAME="$2"; shift 2 ;;
         --help|-h)  usage ;;
-        *)          err "Unknown option: $1"; usage ;;
+        *)          err "Bilinmeyen secenek: $1"; usage ;;
     esac
 done
 
-# Mode determination
+# Mode belirleme
 if [[ "$MODE" == "matrix" ]]; then
     cmd_matrix
     exit 0
@@ -479,16 +474,16 @@ if [[ -n "$OUTPUT_FILE" && -n "$AGENT_NAME" ]]; then
     exit 0
 fi
 
-# No mode selected
+# Hicbir mod secilmediyse
 if [[ -n "$OUTPUT_FILE" && -z "$AGENT_NAME" ]]; then
-    err "--agent parameter is required"
+    err "--agent parametresi gerekli"
     exit 1
 fi
 
 if [[ -z "$OUTPUT_FILE" && -n "$AGENT_NAME" ]]; then
-    err "--output parameter is required"
+    err "--output parametresi gerekli"
     exit 1
 fi
 
-err "Please select a command: --matrix, --batch, or --output <file> --agent <name>"
+err "Bir komut secmelisiniz: --matrix, --batch, veya --output <file> --agent <name>"
 usage

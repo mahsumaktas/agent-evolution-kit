@@ -1,36 +1,30 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
+# Oracle Autonomous Research Engine — Otonom arastirma sistemi
+# Oracle bu script ile surekli kendini gelistirmek icin arastirma yapar.
 #
-# research.sh — Autonomous research engine
-#
-# Performs research on topics relevant to the agent system's improvement.
-# Can auto-select topics from failed trajectories or knowledge gaps.
-#
-# Usage:
-#   research.sh --topic "subject"     Research a specific topic
-#   research.sh --auto                Pick topic from trajectory failures
-#   research.sh --trend               Scan recent technology trends
-#   research.sh --gap-analysis        Analyze knowledge gaps
+# Kullanim:
+#   research.sh --topic "AI self-evolution"      # Belirli konu
+#   research.sh --auto                           # Otomatik konu secimi
+#   research.sh --trend                          # Teknoloji trend taramasi
+#   research.sh --gap-analysis                   # Bilgi boslugu analizi
 
 set -euo pipefail
 
-# === Configuration ===
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
-BRIDGE="$AEK_HOME/scripts/bridge.sh"
-KNOWLEDGE_DIR="$AEK_HOME/memory/knowledge"
-TRAJECTORY="$AEK_HOME/memory/trajectory-pool.json"
-REFLECTIONS_DIR="$AEK_HOME/memory/reflections"
-RESEARCH_LOG="$AEK_HOME/memory/research-log.md"
+BRIDGE="$HOME/clawd/scripts/bridge.sh"
+KNOWLEDGE_DIR="$HOME/clawd/memory/knowledge"
+TRAJECTORY="$HOME/clawd/memory/trajectory-pool.json"
+REFLECTIONS_DIR="$HOME/clawd/memory/reflections"
+RESEARCH_LOG="$HOME/clawd/memory/research-log.md"
 
-# === Colors ===
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
 log() { echo -e "${GREEN}[research]${NC} $1" >&2; }
 step() { echo -e "${CYAN}[research]${NC} === $1 ===" >&2; }
 
-# === Parse Arguments ===
+# === ARGS ===
 MODE="topic"
 TOPIC=""
 DEPTH="standard"  # standard | deep
@@ -43,7 +37,7 @@ while [[ $# -gt 0 ]]; do
         --gap-analysis) MODE="gap"; shift;;
         --deep)  DEPTH="deep"; shift;;
         --help|-h)
-            echo "Usage: research.sh [--topic \"subject\" | --auto | --trend | --gap-analysis] [--deep]"
+            echo "Kullanim: research.sh [--topic \"konu\" | --auto | --trend | --gap-analysis] [--deep]"
             exit 0;;
         *) TOPIC="$1"; shift;;
     esac
@@ -51,178 +45,151 @@ done
 
 mkdir -p "$KNOWLEDGE_DIR"
 
-# === Auto Topic Selection ===
+# === AUTO TOPIC SELECTION ===
 if [[ "$MODE" == "auto" ]]; then
-    step "AUTO TOPIC SELECTION"
-    log "Analyzing trajectory pool and reflections..."
+    step "OTOMATIK KONU SECIMI"
+    log "Trajectory pool ve reflections analiz ediliyor..."
 
-    TOPIC=$(python3 - "$TRAJECTORY" "$REFLECTIONS_DIR" <<'PYEOF'
-import json, os, glob, sys
+    TOPIC=$(python3 -c "
+import json, os, glob
+
+# Analyze reflections for recurring failures
+reflections = []
+for f in glob.glob('$REFLECTIONS_DIR/*/*.md'):
+    with open(f) as fh:
+        reflections.append(fh.read())
 
 # Analyze trajectory pool for weak areas
 try:
-    with open(sys.argv[1]) as f:
+    with open('$TRAJECTORY') as f:
         pool = json.load(f)
-    if isinstance(pool, list):
-        entries = pool
-    else:
-        entries = pool.get('entries', pool.get('trajectories', []))
-    failed = [e for e in entries if e.get('result','').upper() in ('FAILED','ERROR')]
+    entries = pool.get('entries', [])
+    failed = [e for e in entries if e.get('result') == 'FAILED']
+    # Find most common failure types
     fail_types = {}
     for e in failed:
-        t = e.get('task_type', e.get('task', 'unknown'))
+        t = e.get('task_type', 'unknown')
         fail_types[t] = fail_types.get(t, 0) + 1
     if fail_types:
         worst = max(fail_types, key=fail_types.get)
-        print(f'Most failed task type: {worst} -- research improvement methods')
+        print(f'En cok basarisiz gorev tipi: {worst} — iyilestirme yontemleri arastir')
+    elif reflections:
+        print('Agent reflections incelemesi — tekrarlayan sorunlar ve cozumleri')
     else:
-        # Check reflections
-        reflections = glob.glob(sys.argv[2] + '/*/*.md') + glob.glob(sys.argv[2] + '/*.md')
-        if reflections:
-            print('Agent reflection analysis -- recurring issues and solutions')
-        else:
-            print('AI agent self-improvement techniques and autonomous tool generation')
+        print('AI agent self-improvement ve autonomous tool generation guncel teknikler')
 except:
-    print('AI agent self-improvement techniques and autonomous tool generation')
-PYEOF
-)
+    print('AI agent self-improvement ve autonomous tool generation guncel teknikler')
+" 2>/dev/null)
 
-    log "Selected topic: $TOPIC"
+    log "Secilen konu: $TOPIC"
 fi
 
 if [[ "$MODE" == "trend" ]]; then
-    TOPIC="Recent AI/ML developments, new tools, new frameworks, and their practical applications for agent systems"
+    TOPIC="Son 1 haftanin en onemli AI/ML gelismeleri, yeni araclar, yeni frameworkler, User'un kariyerine etkisi"
 fi
 
 if [[ "$MODE" == "gap" ]]; then
-    step "KNOWLEDGE GAP ANALYSIS"
-    TOPIC=$(python3 - "$KNOWLEDGE_DIR" <<'PYEOF'
-import os, glob, sys
+    step "BILGI BOSLUGU ANALIZI"
+    TOPIC=$(python3 -c "
+import json, os, glob
 
 # Check what knowledge exists
 existing = set()
-for f in glob.glob(sys.argv[1] + '/*.md'):
+for f in glob.glob('$KNOWLEDGE_DIR/*.md'):
     existing.add(os.path.basename(f).replace('.md',''))
 
-# Expected knowledge areas for an agent system
+# Define expected knowledge areas
 expected = [
     'ai-agent-frameworks', 'prompt-engineering', 'mcp-protocol',
-    'llm-cli-tools', 'typescript-best-practices', 'python-automation',
-    'devops-patterns', 'security-best-practices', 'monitoring-patterns',
-    'self-evolution-techniques', 'multi-agent-coordination'
+    'claude-code-api', 'typescript-best-practices', 'python-automation',
+    'devops-patterns', 'security-best-practices', 'freelance-strategies',
+    'twitter-growth', 'tech-trends-2026'
 ]
 
-missing = [e for e in expected if not any(e in x for x in existing)]
+missing = [e for e in expected if e not in existing]
 if missing:
-    print(f'Knowledge gaps: {", ".join(missing[:3])} -- research these areas')
+    print(f'Eksik bilgi alanlari: {', '.join(missing[:3])} — bunlari arastir')
 else:
-    print('Update and deepen existing knowledge areas')
-PYEOF
-)
+    print('Mevcut bilgi alanlarini guncelle ve derinlestir')
+" 2>/dev/null)
 
-    log "Gap analysis result: $TOPIC"
+    log "Gap analizi sonucu: $TOPIC"
 fi
 
-[[ -z "$TOPIC" ]] && { echo "No topic specified. Use --topic, --auto, --trend, or --gap-analysis."; exit 1; }
+[[ -z "$TOPIC" ]] && { echo "Konu belirtilmedi"; exit 1; }
 
-# === Research ===
-step "RESEARCH STARTED"
-log "Topic: $TOPIC"
-log "Depth: $DEPTH"
+# === RESEARCH ===
+step "ARASTIRMA BASLADI"
+log "Konu: $TOPIC"
+log "Derinlik: $DEPTH"
 
 BRIDGE_MODE="--research"
 [[ "$DEPTH" == "standard" ]] && BRIDGE_MODE="--analyze"
 
-RESEARCH_PROMPT="You are an Autonomous Research Engine for an AI agent system. Your purpose: improve system capabilities.
+RESEARCH_PROMPT="Sen Oracle'in Autonomous Research Engine'isin. Amacin: Oracle'i ve User'u daha guclu kilmak.
 
-RESEARCH TOPIC: $TOPIC
+ARASTIRMA KONUSU: $TOPIC
 
-TASK:
-1. Research this topic thoroughly (web search, docs, GitHub)
-2. Summarize the top 5-10 findings
-3. Write a CONCRETE action item for each finding
-4. How does this relate to running an autonomous multi-agent system?
+GOREV:
+1. Bu konuda kapsamli arastirma yap (web search, docs, GitHub)
+2. En onemli 5-10 bulguyu ozetle
+3. Her bulgu icin SOMUT aksiyon onerisi yaz
+4. User'un durumuna (Istanbul, Technical COO hedefi, freelancing) baglantisi nedir?
 
 FORMAT:
-# Research: [topic]
-Date: [today's date]
+# Arastirma: [konu]
+Tarih: [bugunun tarihi]
 
-## Summary
-[2-3 sentences]
+## Ozet
+[2-3 cumle]
 
-## Findings
-1. **[finding title]**
-   - Detail: [explanation]
-   - Source: [URL or reference]
-   - Action: [what to do]
+## Bulgular
+1. **[bulgu basligi]**
+   - Detay: [aciklama]
+   - Kaynak: [URL veya referans]
+   - Aksiyon: [ne yapilmali]
 
-## Recommendations
-- [concrete recommendation 1]
-- [concrete recommendation 2]
-- [concrete recommendation 3]
+## Oneriler
+- [somut oneri 1]
+- [somut oneri 2]
+- [somut oneri 3]
 
-## System Improvement Implications
-- [how the system can leverage this]
+## Oracle Icin Cikarimlar
+- [Oracle'in kendini nasil gelistirebilecegi]
 "
 
-# Try LLM bridge
-RESULT=""
-if [[ -x "$BRIDGE" ]]; then
-    RESULT=$(bash "$BRIDGE" $BRIDGE_MODE --text --silent "$RESEARCH_PROMPT" 2>/dev/null) || {
-        log "LLM bridge call failed"
-        RESULT=""
-    }
-fi
+RESULT=$(bash "$BRIDGE" $BRIDGE_MODE --text --silent "$RESEARCH_PROMPT" 2>/dev/null) || {
+    echo "Arastirma basarisiz" >&2
+    exit 1
+}
 
-# Fallback
-if [[ -z "$RESULT" ]]; then
-    RESULT="# Research: $TOPIC
-Date: $(date +%Y-%m-%d)
-
-## Summary
-Research topic queued but LLM bridge is unavailable. Manual research needed.
-
-## Topic Details
-- **Subject:** $TOPIC
-- **Mode:** $MODE
-- **Depth:** $DEPTH
-
-## Next Steps
-- Set up bridge.sh with an LLM CLI for automated research
-- Manually research this topic and save findings here
-- Use web search for: $TOPIC
-
-*Note: Connect bridge.sh to an LLM CLI for AI-powered research.*"
-fi
-
-# === Save Findings ===
-step "SAVING FINDINGS"
+# === SAVE FINDINGS ===
+step "BULGULAR KAYDEDILIYOR"
 
 SAFE_TOPIC=$(echo "$TOPIC" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | head -c50)
 FINDING_FILE="$KNOWLEDGE_DIR/$(date +%Y-%m-%d)-${SAFE_TOPIC}.md"
 
 echo "$RESULT" > "$FINDING_FILE"
-log "Findings saved: $FINDING_FILE"
+log "Bulgular kaydedildi: $FINDING_FILE"
 
-# === Update Research Log ===
-mkdir -p "$(dirname "$RESEARCH_LOG")"
+# === UPDATE RESEARCH LOG ===
 TIMESTAMP=$(date +%Y-%m-%d)
 cat >> "$RESEARCH_LOG" << EOF
 
-## $TIMESTAMP -- $TOPIC
-- **Mode:** $MODE
-- **Depth:** $DEPTH
-- **File:** $FINDING_FILE
-- **Status:** COMPLETED
+## $TIMESTAMP — $TOPIC
+- **Mod:** $MODE
+- **Derinlik:** $DEPTH
+- **Dosya:** $FINDING_FILE
+- **Durum:** TAMAMLANDI
 EOF
 
-log "Research log updated"
+log "Research log guncellendi"
 
-# === Output Summary ===
+# === OUTPUT SUMMARY ===
 echo ""
-echo "=== RESEARCH COMPLETED ==="
-echo "Topic:  $TOPIC"
-echo "File:   $FINDING_FILE"
+echo "=== ARASTIRMA TAMAMLANDI ==="
+echo "Konu:   $TOPIC"
+echo "Dosya:  $FINDING_FILE"
 echo "Log:    $RESEARCH_LOG"
 echo ""
 echo "$RESULT" | head -20

@@ -1,32 +1,21 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
+# Oracle Claude Bridge — Oracle'in tam guc erisim koprusu
+# Oracle bu script uzerinden Claude Code CLI'a erisir.
+# Kullanim: bridge.sh [options] "prompt"
 #
-# bridge.sh — Nested LLM CLI wrapper with presets, budget control, logging,
-# circuit breaker integration, and reflexion trigger.
-#
-# Wraps any LLM CLI (e.g. Claude CLI) with configurable presets, cost tracking,
-# trajectory pool integration, and post-failure reflexion hooks for the
-# self-evolution loop.
-#
-# Usage:
-#   bridge.sh [options] "prompt"
-#
-# Examples:
-#   bridge.sh "Analyze this PR"
-#   bridge.sh --model opus --budget 0.50 "Deep research"
-#   bridge.sh --json-schema '{"type":"object"}' "Give structured output"
-#   bridge.sh --tool-gen "Write a CSV parser script"
-#   bridge.sh --research "Recent AI developments"
+# Ornekler:
+#   bridge.sh "Bu PR'i analiz et"
+#   bridge.sh --model opus --budget 0.50 "Derin arastirma yap"
+#   bridge.sh --json-schema '{"type":"object"}' "Yapisal cikti ver"
+#   bridge.sh --tool-gen "CSV parser scripti yaz"
+#   bridge.sh --research "Son AI gelismeleri"
 
 set -euo pipefail
 
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
-
-# === CLI PATH ===
-CLI_BIN="${CLI_BIN:-$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")}"
-if [[ ! -x "$CLI_BIN" ]]; then
-    echo "[bridge] ERROR: LLM CLI not found at: $CLI_BIN" >&2
-    echo "[bridge] Set CLI_BIN to the path of your LLM CLI tool." >&2
+# === CLAUDE CLI PATH ===
+CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")}"
+if [[ ! -x "$CLAUDE_BIN" ]]; then
+    echo "[bridge] HATA: claude CLI bulunamadi. PATH: $CLAUDE_BIN" >&2
     exit 127
 fi
 
@@ -41,12 +30,12 @@ SYSTEM_PROMPT=""
 JSON_SCHEMA=""
 PERMISSION_MODE="dangerously-skip-permissions"
 SESSION_PERSIST="--no-session-persistence"
-LOG_DIR="$AEK_HOME/memory/bridge-logs"
-TRAJECTORY_FILE="$AEK_HOME/memory/trajectory-pool.json"
-CB_SCRIPT="$AEK_HOME/scripts/circuit-breaker.sh"
+LOG_DIR="$HOME/clawd/memory/bridge-logs"
+TRAJECTORY_FILE="$HOME/clawd/memory/trajectory-pool.json"
+CB_SCRIPT="$HOME/clawd/scripts/circuit-breaker.sh"
 REPLAY_ENABLED="${REPLAY_ENABLED:-true}"
 EVAL_ENABLED="${EVAL_ENABLED:-false}"
-AEK_PRIORITY="${AEK_PRIORITY:-}"
+ORACLE_PRIORITY="${ORACLE_PRIORITY:-}"
 
 # === COLORS ===
 RED='\033[0;31m'
@@ -59,20 +48,20 @@ log() { echo -e "${GREEN}[bridge]${NC} $1" >&2; }
 warn() { echo -e "${YELLOW}[bridge]${NC} $1" >&2; }
 err() { echo -e "${RED}[bridge]${NC} $1" >&2; }
 
-# Append entry to trajectory pool — supports dict format ({entries:[...]}) and flat list
+# Trajectory pool'a entry ekle — dict format ({entries:[...]}) ve flat list destekler
 append_trajectory() {
     local exit_code="$1" cost="${2:-0}" turns="${3:-1}"
     local prompt_short
     prompt_short="$(echo "$PROMPT" | head -c200)"
     python3 - "$TRAJECTORY_FILE" "$TIMESTAMP" "$MODEL" "${DURATION:-0}" "$cost" "$turns" \
-        "${BRIDGE_CALLER:-manual}" "$prompt_short" "$exit_code" <<'PYEOF'
+        "${ORACLE_CALLER:-manual}" "$prompt_short" "$exit_code" <<'PYEOF'
 import json, sys, os
 
 path, ts, model, dur, cost, turns, caller, prompt, exit_code = sys.argv[1:10]
 
 result = "success" if exit_code == "0" else "failure"
 
-# Read file — may be dict or flat list
+# Dosyayi oku — dict veya flat list olabilir
 schema_meta = {}
 entries = []
 if os.path.exists(path):
@@ -87,7 +76,7 @@ if os.path.exists(path):
     except (json.JSONDecodeError, ValueError):
         entries = []
 
-# New entry
+# Yeni entry
 entry = {
     "id": f"traj-{len(entries)+1:03d}",
     "timestamp": ts,
@@ -99,25 +88,25 @@ entry = {
     "turns": int(turns),
     "caller": caller,
     "result": result,
-    "task_type": os.environ.get("AEK_TASK_TYPE", "general")
+    "task_type": os.environ.get("ORACLE_TASK_TYPE", "general")
 }
 eval_sc = os.environ.get("BRIDGE_EVAL_SCORE", "")
 if eval_sc and eval_sc.isdigit():
     entry["eval_score"] = int(eval_sc)
-priority = os.environ.get("AEK_PRIORITY", "")
+priority = os.environ.get("ORACLE_PRIORITY", "")
 if priority:
     entry["priority"] = priority
 entries.append(entry)
 
-# Keep last 100 entries
+# Son 100 entry tut
 if len(entries) > 100:
     entries = entries[-100:]
 
-# Preserve schema meta if exists, otherwise add defaults
+# Schema meta varsa koru, yoksa varsayilan ekle
 if not schema_meta:
     schema_meta = {
         "_schema_version": "1.0",
-        "_description": "Trajectory pool — structural record of every agent task",
+        "_description": "Oracle trajectory pool — her agent gorevinin yapisal kaydini tutar",
         "_max_entries": 100,
         "_archive_after_weeks": 4
     }
@@ -130,45 +119,31 @@ PYEOF
 
 usage() {
     cat >&2 << 'EOF'
-bridge.sh — LLM CLI Bridge with Presets
+Oracle Claude Bridge — Tam guc erisim
 
-Usage: bridge.sh [options] "prompt"
+Kullanim: bridge.sh [options] "prompt"
 
-Options:
-  --model <model>        Model selection: opus, sonnet, haiku (default: sonnet)
-  --max-turns <N>        Maximum turn count (default: 25)
-  --budget <USD>         Maximum budget in USD (default: 1.00)
-  --timeout <seconds>    Timeout in seconds (default: 300)
-  --output text|json     Output format (default: json)
-  --add-dir <path>       Additional directory access
-  --system-prompt <str>  Custom system prompt
-  --json-schema <json>   JSON schema for structured output
-  --persist              Persist session (for resume)
-  --text                 Text output (shorthand for --output text)
-  --silent               Suppress log messages
-  --dry-run              Show command without executing
-  --replay               Enable replay context injection (default: on)
-  --no-replay            Disable replay context injection
-  --eval                 Enable eval post-hook scoring
-  --no-eval              Disable eval post-hook scoring (default)
-  --priority <P0-P4>     Manual priority override
+Secenekler:
+  --model <model>        Model secimi: opus, sonnet, haiku (default: sonnet)
+  --max-turns <N>        Maksimum tur sayisi (default: 25)
+  --budget <USD>         Maksimum butce (default: 1.00)
+  --timeout <saniye>     Zaman asimi (default: 300)
+  --output text|json     Cikti formati (default: json)
+  --add-dir <path>       Ek dizin erisimi
+  --system-prompt <str>  Ozel sistem prompt'u
+  --json-schema <json>   JSON schema (yapisal cikti icin)
+  --persist              Session'i kaydet (resume icin)
+  --text                 text output (json yerine)
+  --silent               Log mesajlarini gizle
+  --dry-run              Komutu goster, calistirma
 
-Presets:
-  --research             Deep research mode (opus, 50 turns, $2.00 budget)
-  --quick                Quick query mode (haiku, 3 turns, $0.10 budget)
-  --code                 Code generation mode (sonnet, 30 turns, $1.50 budget)
-  --analyze              Analysis mode (opus, 20 turns, $1.00 budget)
-  --tool-gen             Tool generation mode (sonnet, 40 turns, $2.00 budget)
-  --system               System management mode (sonnet, 15 turns, $0.50 budget)
-
-Environment Variables:
-  AEK_HOME               Kit root directory (default: ~/agent-evolution-kit)
-  CLI_BIN                Path to LLM CLI binary (default: auto-detect claude)
-  BRIDGE_CALLER          Caller identifier for cost log (default: manual)
-  AEK_PRIORITY           Priority level override (P0-P4)
-  AEK_TASK_TYPE          Task type for trajectory enrichment (default: general)
-  REPLAY_ENABLED         Enable replay injection (default: true)
-  EVAL_ENABLED           Enable eval post-hook (default: false)
+Presetler:
+  --research             Derin arastirma modu (opus, 50 turn, 2.00 butce)
+  --quick                Hizli sorgu modu (haiku, 3 turn, 0.10 butce)
+  --code                 Kod uretimi modu (sonnet, 30 turn, 1.50 butce)
+  --analyze              Analiz modu (opus, 20 turn, 1.00 butce)
+  --tool-gen             Tool uretimi modu (sonnet, 40 turn, 2.00 butce)
+  --system               Sistem yonetimi modu (sonnet, 15 turn, 0.50 butce)
 EOF
     exit 1
 }
@@ -203,9 +178,9 @@ while [[ $# -gt 0 ]]; do
         --no-replay) REPLAY_ENABLED=false; shift;;
         --eval)      EVAL_ENABLED=true; shift;;
         --no-eval)   EVAL_ENABLED=false; shift;;
-        --priority)  AEK_PRIORITY="$2"; shift 2;;
+        --priority)  ORACLE_PRIORITY="$2"; shift 2;;
         --help|-h)   usage;;
-        -*)          err "Unknown option: $1"; usage;;
+        -*)          err "Bilinmeyen secenek: $1"; usage;;
         *)           PROMPT="$1"; shift;;
     esac
 done
@@ -215,7 +190,7 @@ if [[ -z "$PROMPT" ]]; then
     if [[ ! -t 0 ]]; then
         PROMPT=$(cat)
     else
-        err "Prompt required"
+        err "Prompt gerekli"
         usage
     fi
 fi
@@ -224,31 +199,31 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPLAY_SCRIPT="$SCRIPT_DIR/replay.sh"
 if [[ "$REPLAY_ENABLED" == "true" && -x "$REPLAY_SCRIPT" ]]; then
-    TASK_TYPE="${AEK_TASK_TYPE:-general}"
+    TASK_TYPE="${ORACLE_TASK_TYPE:-general}"
     REPLAY_CTX=$("$REPLAY_SCRIPT" --task-type "$TASK_TYPE" --max 2 --inject 2>/dev/null) || true
     if [[ -n "$REPLAY_CTX" ]]; then
         PROMPT="${PROMPT}
 
 ## Past Experience (Similar Tasks)
 ${REPLAY_CTX}"
-        $SILENT || log "Replay: ${#REPLAY_CTX} chars injected"
+        $SILENT || log "Replay: ${#REPLAY_CTX} karakter enjekte edildi"
     fi
 fi
 
-# === IDENTITY INJECTION ===
-IDENTITY_FILE="$AEK_HOME/scripts/identity-prompt.txt"
+# === ORACLE IDENTITY INJECTION ===
+IDENTITY_FILE="$HOME/clawd/scripts/identity-prompt.txt"
 if [[ -z "$SYSTEM_PROMPT" && -f "$IDENTITY_FILE" ]]; then
     IDENTITY_PROMPT=$(cat "$IDENTITY_FILE")
 fi
 
 # === BUILD COMMAND ===
-CMD=(env -u CLAUDECODE "$CLI_BIN" -p "$PROMPT"
+CMD=(env -u CLAUDECODE "$CLAUDE_BIN" -p "$PROMPT"
     --model "$MODEL"
     --max-turns "$MAX_TURNS"
     --max-budget-usd "$BUDGET"
     --output-format "$OUTPUT_FORMAT"
     --"$PERMISSION_MODE"
-    --add-dir "$AEK_HOME"
+    --add-dir "$HOME/clawd"
     --add-dir "$HOME"
 )
 
@@ -268,10 +243,10 @@ if $DRY_RUN; then
 fi
 
 # === CIRCUIT BREAKER CHECK ===
-CB_CALLER="${BRIDGE_CALLER:-manual}"
+CB_CALLER="${ORACLE_CALLER:-manual}"
 if [[ -x "$CB_SCRIPT" ]]; then
     if ! "$CB_SCRIPT" check "$CB_CALLER" >/dev/null 2>&1; then
-        err "Circuit breaker OPEN: $CB_CALLER blocked. Use 'circuit-breaker.sh reset $CB_CALLER' to reset."
+        err "Circuit breaker OPEN: $CB_CALLER engellendi. 'circuit-breaker.sh reset $CB_CALLER' ile sifirlayabilirsiniz."
         exit 2
     fi
 fi
@@ -288,10 +263,10 @@ if [[ -x "$GOVERNANCE_SCRIPT" ]]; then
 fi
 
 # === PRIORITY ASSIGNMENT ===
-if [[ -z "$AEK_PRIORITY" ]]; then
-    PRIORITY_CONFIG="$AEK_HOME/config/priority-rules.yaml"
+if [[ -z "$ORACLE_PRIORITY" ]]; then
+    PRIORITY_CONFIG="$HOME/clawd/config/priority-rules.yaml"
     if [[ -f "$PRIORITY_CONFIG" ]] && command -v python3 &>/dev/null; then
-        AEK_PRIORITY=$(python3 - "$PRIORITY_CONFIG" "$PROMPT" <<'PYEOF'
+        ORACLE_PRIORITY=$(python3 - "$PRIORITY_CONFIG" "$PROMPT" <<'PYEOF'
 import sys, re
 
 config_file, prompt = sys.argv[1], sys.argv[2].lower()
@@ -319,13 +294,13 @@ for level in ["P0", "P1", "P3", "P4"]:
             sys.exit(0)
 print("P2")
 PYEOF
-        ) || AEK_PRIORITY="P2"
+        ) || ORACLE_PRIORITY="P2"
     else
-        AEK_PRIORITY="P2"
+        ORACLE_PRIORITY="P2"
     fi
 fi
-export AEK_PRIORITY
-$SILENT || log "Priority: $AEK_PRIORITY"
+export ORACLE_PRIORITY
+$SILENT || log "Priority: $ORACLE_PRIORITY"
 
 # === EXECUTE ===
 mkdir -p "$LOG_DIR"
@@ -345,15 +320,15 @@ _run_with_timeout() {
 }
 
 # === REFLEXION TRIGGER (post-failure hook) ===
-# Runs self-evaluation + MARS metacognitive extraction after failed tasks.
-# No error blocks bridge completion (wrapped with || true).
+# Basarisiz gorevlerde oz-degerlendirme + MARS metacognitive extraction yapar.
+# Hic bir hata bridge'in tamamlanmasini engellemez (|| true ile sarili).
 _reflexion_trigger() {
     local exit_code="$1"
-    local caller="${BRIDGE_CALLER:-manual}"
+    local caller="${ORACLE_CALLER:-manual}"
     local safe_caller
     safe_caller="$(echo "$caller" | sed 's/[^a-zA-Z0-9_-]/-/g' | head -c30)"
-    local reflect_dir="$AEK_HOME/memory/reflections/$safe_caller"
-    local principles_dir="$AEK_HOME/memory/principles"
+    local reflect_dir="$HOME/clawd/memory/reflections/$safe_caller"
+    local principles_dir="$HOME/clawd/memory/principles"
     local today
     today="$(date +%Y-%m-%d)"
     local reflect_file="$reflect_dir/${today}-${safe_caller}.md"
@@ -363,19 +338,19 @@ _reflexion_trigger() {
     local error_tail
     error_tail="$(echo "$RESULT" | tail -c500)"
 
-    # Is CLI available?
-    if [[ ! -x "$CLI_BIN" ]]; then
+    # Claude CLI kullanilabilir mi?
+    if [[ ! -x "$CLAUDE_BIN" ]]; then
         return 0
     fi
 
-    # Cooldown: skip if same agent reflected in last 60 minutes
+    # Cooldown: ayni agent son 60 dakikada reflect ettiyse atla
     mkdir -p "$reflect_dir"
     if [[ -n "$(find "$reflect_dir" -name '*.md' -mmin -60 2>/dev/null)" ]]; then
-        $SILENT || log "Reflexion cooldown active ($safe_caller), skipping."
+        $SILENT || log "Reflexion cooldown aktif ($safe_caller), atlaniyor."
         return 0
     fi
 
-    $SILENT || log "Reflexion trigger running ($safe_caller)..."
+    $SILENT || log "Reflexion trigger calisiyor ($safe_caller)..."
 
     # --- Step 1: Reflection ---
     local reflection_prompt
@@ -394,17 +369,17 @@ Format:
 [1 actionable sentence]"
 
     local reflection
-    reflection="$(env -u CLAUDECODE "$CLI_BIN" -p --model haiku --max-tokens 300 "$reflection_prompt" 2>/dev/null)" || {
-        $SILENT || warn "Reflexion call failed."
+    reflection="$(env -u CLAUDECODE "$CLAUDE_BIN" -p --model haiku --max-tokens 300 "$reflection_prompt" 2>/dev/null)" || {
+        $SILENT || warn "Reflexion cagrisi basarisiz."
         return 0
     }
 
     if [[ -z "$reflection" ]]; then
-        $SILENT || warn "Reflexion empty output."
+        $SILENT || warn "Reflexion bos cikti."
         return 0
     fi
 
-    # Save reflection
+    # Reflection'i kaydet
     {
         echo "# Reflexion: ${caller} — ${today}"
         echo ""
@@ -415,7 +390,7 @@ Format:
         echo "$reflection"
     } > "$reflect_file"
 
-    $SILENT || log "Reflection saved: $reflect_file"
+    $SILENT || log "Reflection kaydedildi: $reflect_file"
 
     # --- Step 2: MARS metacognitive extraction ---
     local mars_prompt
@@ -433,17 +408,17 @@ Reflection:
 ${reflection}"
 
     local mars_result
-    mars_result="$(env -u CLAUDECODE "$CLI_BIN" -p --model haiku --max-tokens 300 "$mars_prompt" 2>/dev/null)" || {
-        $SILENT || warn "MARS extraction call failed."
+    mars_result="$(env -u CLAUDECODE "$CLAUDE_BIN" -p --model haiku --max-tokens 300 "$mars_prompt" 2>/dev/null)" || {
+        $SILENT || warn "MARS extraction cagrisi basarisiz."
         return 0
     }
 
     if [[ -z "$mars_result" ]]; then
-        $SILENT || warn "MARS extraction empty output."
+        $SILENT || warn "MARS extraction bos cikti."
         return 0
     fi
 
-    # Append MARS result to reflection file
+    # MARS sonucunu reflection dosyasina ekle
     {
         echo ""
         echo "---"
@@ -452,38 +427,38 @@ ${reflection}"
         echo "$mars_result"
     } >> "$reflect_file"
 
-    # Save principle to separate file (append)
+    # Principle'i ayri dosyaya kaydet (append)
     local principle_line
     principle_line="$(echo "$mars_result" | grep -m1 '^PRINCIPLE:' || true)"
     if [[ -n "$principle_line" ]]; then
         mkdir -p "$principles_dir"
         echo "[${today}] ${principle_line}" >> "$principles_file"
-        $SILENT || log "Principle saved: $principles_file"
+        $SILENT || log "Principle kaydedildi: $principles_file"
     fi
 
-    $SILENT || log "Reflexion + MARS completed ($safe_caller)."
+    $SILENT || log "Reflexion + MARS tamamlandi ($safe_caller)."
     return 0
 }
 
 RESULT=$(_run_with_timeout "$TIMEOUT" "${CMD[@]}" 2>/dev/null) || {
     EXIT_CODE=$?
     if [[ $EXIT_CODE -eq 142 || $EXIT_CODE -eq 124 ]]; then
-        err "Timeout after ${TIMEOUT}s"
+        err "Zaman asimi (${TIMEOUT}s)"
     else
-        err "CLI exited with code: $EXIT_CODE"
+        err "Claude CLI hata kodu: $EXIT_CODE"
     fi
     # Log failure
     echo "{\"timestamp\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"status\":\"FAILED\",\"exit_code\":$EXIT_CODE,\"prompt\":\"$(echo "$PROMPT" | head -c200)\"}" > "$LOG_FILE"
     # Cost log (failure)
-    COST_LOG="$AEK_HOME/memory/cost-log.jsonl"
-    echo "{\"ts\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"duration\":0,\"cost\":\"0\",\"turns\":\"0\",\"status\":\"FAILED\",\"caller\":\"${BRIDGE_CALLER:-manual}\"}" >> "$COST_LOG"
+    COST_LOG="$HOME/clawd/memory/cost-log.jsonl"
+    echo "{\"ts\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"duration\":0,\"cost\":\"0\",\"turns\":\"0\",\"status\":\"FAILED\",\"caller\":\"${ORACLE_CALLER:-manual}\"}" >> "$COST_LOG"
     # Trajectory (failure)
     append_trajectory "$EXIT_CODE" "0" "0"
     # Shadow agent on failure too
     SHADOW_SCRIPT="$SCRIPT_DIR/shadow-agent.sh"
     if [[ -x "$SHADOW_SCRIPT" ]]; then
         SHADOW_CTX="FAILED Task: $(echo "$PROMPT" | head -c200) | Exit: $EXIT_CODE | Model: $MODEL"
-        (echo "$SHADOW_CTX" | "$SHADOW_SCRIPT" review --target "${BRIDGE_CALLER:-manual}" --trigger "error" >/dev/null 2>&1) &
+        (echo "$SHADOW_CTX" | "$SHADOW_SCRIPT" review --target "${ORACLE_CALLER:-manual}" --trigger "error" >/dev/null 2>&1) &
     fi
     # Circuit breaker record (failure)
     [[ -x "$CB_SCRIPT" ]] && "$CB_SCRIPT" record "$CB_CALLER" failure >/dev/null 2>&1 || true
@@ -514,31 +489,33 @@ export BRIDGE_EVAL_SCORE="${EVAL_SCORE:-}"
 
 # === LOG ===
 if [[ "$OUTPUT_FORMAT" == "json" ]]; then
-    # Extract metadata from JSON result
-    COST=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_cost_usd',0))" 2>/dev/null || echo "?")
-    TURNS=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('num_turns',0))" 2>/dev/null || echo "?")
-    $SILENT || log "Completed: ${DURATION}s | Cost: \$${COST} | Turns: $TURNS"
-
-    # Save full log
-    echo "$RESULT" | python3 -c "
+    # Extract metadata + save log in single python3 call
+    PROMPT_PREVIEW="$(echo "$PROMPT" | head -c200)"
+    IFS=$'\t' read -r COST TURNS < <(echo "$RESULT" | python3 - "$TIMESTAMP" "$DURATION" "$LOG_FILE" "$PROMPT_PREVIEW" <<'PYEOF'
 import sys, json
 data = json.load(sys.stdin)
-data['_bridge_meta'] = {
-    'timestamp': '$TIMESTAMP',
-    'duration_s': $DURATION,
-    'prompt_preview': '''$(echo "$PROMPT" | head -c200)''',
+cost = data.get('total_cost_usd', 0)
+turns = data.get('num_turns', 0)
+print(f'{cost}\t{turns}')
+data['_oracle_meta'] = {
+    'timestamp': sys.argv[1],
+    'duration_s': int(sys.argv[2]),
+    'prompt_preview': sys.argv[4],
     'preset': 'custom'
 }
-json.dump(data, sys.stdout, indent=2)
-" > "$LOG_FILE" 2>/dev/null || true
+with open(sys.argv[3], 'w') as f:
+    json.dump(data, f, indent=2)
+PYEOF
+    ) || { COST="?"; TURNS="?"; }
+    $SILENT || log "Tamamlandi: ${DURATION}s | Maliyet: \$${COST} | Turns: $TURNS"
 else
-    $SILENT || log "Completed: ${DURATION}s"
+    $SILENT || log "Tamamlandi: ${DURATION}s"
     echo "{\"timestamp\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"duration_s\":$DURATION,\"status\":\"SUCCESS\",\"prompt\":\"$(echo "$PROMPT" | head -c200)\"}" > "$LOG_FILE"
 fi
 
 # === COST LOG (append-only JSONL) ===
-COST_LOG="$AEK_HOME/memory/cost-log.jsonl"
-COST_ENTRY="{\"ts\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"duration\":$DURATION,\"cost\":\"${COST:-0}\",\"turns\":\"${TURNS:-1}\",\"status\":\"SUCCESS\",\"caller\":\"${BRIDGE_CALLER:-manual}\"}"
+COST_LOG="$HOME/clawd/memory/cost-log.jsonl"
+COST_ENTRY="{\"ts\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"duration\":$DURATION,\"cost\":\"${COST:-0}\",\"turns\":\"${TURNS:-1}\",\"status\":\"SUCCESS\",\"caller\":\"${ORACLE_CALLER:-manual}\"}"
 echo "$COST_ENTRY" >> "$COST_LOG"
 
 # === TRAJECTORY POOL (append entry for self-evolution tracking) ===
@@ -547,16 +524,16 @@ append_trajectory "0" "${COST:-0}" "${TURNS:-1}"
 # === SHADOW AGENT POST-HOOK (background, non-blocking) ===
 SHADOW_SCRIPT="$SCRIPT_DIR/shadow-agent.sh"
 if [[ -x "$SHADOW_SCRIPT" ]]; then
-    SHADOW_TARGET="${BRIDGE_CALLER:-manual}"
+    SHADOW_TARGET="${ORACLE_CALLER:-manual}"
     SHADOW_TRIGGER="task_complete"
-    SHADOW_CTX="Task: $(echo "$PROMPT" | head -c200) | Model: $MODEL | Priority: $AEK_PRIORITY | Eval: ${EVAL_SCORE:-n/a} | Duration: ${DURATION}s"
+    SHADOW_CTX="Task: $(echo "$PROMPT" | head -c200) | Model: $MODEL | Priority: $ORACLE_PRIORITY | Eval: ${EVAL_SCORE:-n/a} | Duration: ${DURATION}s"
     (echo "$SHADOW_CTX" | "$SHADOW_SCRIPT" review --target "$SHADOW_TARGET" --trigger "$SHADOW_TRIGGER" >/dev/null 2>&1) &
 fi
 
 # === CRITIQUE POST-HOOK (P0/P1 only, background) ===
 CRITIQUE_SCRIPT="$SCRIPT_DIR/critique.sh"
-if [[ -x "$CRITIQUE_SCRIPT" && ("$AEK_PRIORITY" == "P0" || "$AEK_PRIORITY" == "P1") ]]; then
-    CRITIQUE_AGENT="${BRIDGE_CALLER:-manual}"
+if [[ -x "$CRITIQUE_SCRIPT" && ("$ORACLE_PRIORITY" == "P0" || "$ORACLE_PRIORITY" == "P1") ]]; then
+    CRITIQUE_AGENT="${ORACLE_CALLER:-manual}"
     CRITIQUE_TMP=$(mktemp)
     echo "$RESULT" > "$CRITIQUE_TMP"
     ("$CRITIQUE_SCRIPT" --output "$CRITIQUE_TMP" --agent "$CRITIQUE_AGENT" >/dev/null 2>&1; rm -f "$CRITIQUE_TMP") &

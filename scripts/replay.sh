@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
-#
+set -euo pipefail
+
+###############################################################################
 # replay.sh — AgentRR Replay: Past trajectory injection for ICL
 #
 # Usage:
@@ -8,15 +9,12 @@
 #   replay.sh --task-type "code-review" --inject         # Prompt injection
 #   replay.sh --task-type "code-review" --max 5 --inject # Custom max
 #
-# Reads trajectory-pool.json and selects relevant past
+# Reads ~/.agent-evolution/memory/trajectory-pool.json and selects relevant past
 # trajectories for in-context learning. Supports both summary table
 # and markdown injection output modes.
+###############################################################################
 
-set -euo pipefail
-
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
-
-TRAJ_FILE="$AEK_HOME/memory/trajectory-pool.json"
+TRAJ_FILE="$HOME/clawd/memory/trajectory-pool.json"
 MAX_EXAMPLES=3
 MAX_TOKENS_PER=500
 TASK_TYPE=""

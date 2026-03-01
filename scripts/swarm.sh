@@ -1,24 +1,20 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
+# Oracle Swarm Runner — Pattern-based multi-agent orchestration
 #
-# swarm.sh — Pattern-based multi-agent orchestration runner
-#
-# Usage:
+# Kullanim:
 #   swarm.sh --pattern consensus --agents "analyst,researcher,guardian" --task "Evaluate X"
 #   swarm.sh --pattern pipeline --agents "researcher,analyst,writer" --task "Research and write about X"
 #   swarm.sh --pattern escalation --task "Solve complex problem X"
 #   swarm.sh --list
 #
-# Supported patterns: consensus, pipeline, fan-out, reflection, review-loop,
+# Desteklenen pattern'lar: consensus, pipeline, fan-out, reflection, review-loop,
 # red-team, escalation, circuit-breaker
 
 set -euo pipefail
 
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
-
 # === PATHS ===
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATTERNS_DIR="$AEK_HOME/config/swarm-patterns"
+PATTERNS_DIR="$HOME/clawd/config/swarm-patterns"
 BRIDGE="$SCRIPT_DIR/bridge.sh"
 CONSENSUS_PY="$SCRIPT_DIR/helpers/consensus.py"
 CB_SCRIPT="$SCRIPT_DIR/circuit-breaker.sh"
@@ -41,22 +37,22 @@ step() { echo -e "${CYAN}[swarm]${NC} $1" >&2; }
 # === USAGE ===
 usage() {
     cat >&2 << 'EOF'
-Swarm Runner — Pattern-based multi-agent orchestration
+Oracle Swarm Runner — Pattern-based multi-agent orchestration
 
-Usage:
+Kullanim:
   swarm.sh --pattern <name> --agents "a,b,c" --task "..."
   swarm.sh --list
 
-Options:
+Secenekler:
   --pattern <name>      Swarm pattern (consensus, pipeline, fan-out, etc.)
   --agents <list>       Comma-separated agent/role list
   --task <text>         Task description
   --consensus-type <t>  Override consensus type (majority, supermajority, unanimous, weighted, quorum)
   --list                List available patterns
   --dry-run             Show what would be executed without running
-  -h, --help            Show this message
+  -h, --help            Bu mesaj
 
-Examples:
+Ornekler:
   swarm.sh --pattern consensus --agents "analyst,researcher,guardian" --task "Evaluate PR #123"
   swarm.sh --pattern pipeline --agents "researcher,analyst,writer" --task "Research and write report"
   swarm.sh --pattern escalation --task "Solve complex problem"
@@ -65,7 +61,7 @@ EOF
 }
 
 # === YAML PARSER ===
-# Simple grep/sed YAML parsing — single-level key:value only
+# Basit grep/sed ile YAML parsing — sadece tek seviye key:value destekler
 yaml_get() {
     local file="$1" key="$2"
     sed -n "s/^[[:space:]]*${key}:[[:space:]]*//p" "$file" | sed 's/^"\(.*\)"$/\1/' | head -1
@@ -82,7 +78,7 @@ yaml_get_array() {
 }
 
 # === BRIDGE WRAPPER ===
-# Call bridge, return output
+# Bridge'i cagir, output'u dondur
 bridge_call() {
     local preset="${1:-analyze}" prompt="$2"
     local result
@@ -186,7 +182,7 @@ Provide brief reasoning before your vote."
 
         echo "$output" > "$WORK_DIR/vote-${agent}.txt"
 
-        # Parse vote
+        # Vote'u parse et
         local vote
         vote="$(echo "$output" | grep -oE 'VOTE:[[:space:]]*(APPROVE|REJECT|ABSTAIN)' | tail -1 | sed 's/VOTE:[[:space:]]*//')"
         vote="${vote:-ABSTAIN}"
@@ -539,7 +535,7 @@ Provide a thorough and complete response."
             continue
         }
 
-        # Success check — if no [BRIDGE_ERROR] and non-empty, consider it successful
+        # Basari kontrolu — [BRIDGE_ERROR] icermiyorsa basarili say
         if [[ "$output" != *"[BRIDGE_ERROR]"* ]] && [[ -n "$output" ]]; then
             log "Cascade succeeded with model=$model"
             echo "$output"
@@ -564,7 +560,7 @@ flow_guarded() {
     fallback="$(yaml_get_config "$PATTERN_FILE" "fallback")"
     fallback="${fallback:-return_cached_or_error}"
 
-    # Circuit breaker check
+    # Circuit breaker kontrolu
     if [[ -x "$CB_SCRIPT" ]]; then
         step "Circuit breaker check: $cb_name"
         if ! bash "$CB_SCRIPT" check "$cb_name" 2>/dev/null; then
@@ -574,7 +570,7 @@ flow_guarded() {
         fi
     fi
 
-    # Execute
+    # Calistir
     step "Guarded execution: agent=$agent"
     local prompt="You are acting as: $agent
 Task: $task
@@ -583,7 +579,7 @@ Provide your response."
     local output
     if output="$(bridge_call "analyze" "$prompt")"; then
         if [[ "$output" != *"[BRIDGE_ERROR]"* ]] && [[ -n "$output" ]]; then
-            # Record success
+            # Basari kaydet
             [[ -x "$CB_SCRIPT" ]] && bash "$CB_SCRIPT" record "$cb_name" success 2>/dev/null
             log "Guarded execution succeeded"
             echo "$output"
@@ -591,7 +587,7 @@ Provide your response."
         fi
     fi
 
-    # Record failure
+    # Hata kaydet
     [[ -x "$CB_SCRIPT" ]] && bash "$CB_SCRIPT" record "$cb_name" failure 2>/dev/null
     err "Guarded execution failed"
     echo "{\"status\":\"execution_failed\",\"agent\":\"$agent\",\"fallback\":\"$fallback\"}"
@@ -619,45 +615,45 @@ while [[ $# -gt 0 ]]; do
         --list)     LIST=true; shift ;;
         --dry-run)  DRY_RUN=true; shift ;;
         -h|--help)  usage ;;
-        *)          err "Unknown parameter: $1"; usage ;;
+        *)          err "Bilinmeyen parametre: $1"; usage ;;
     esac
 done
 
-# List mode
+# List modunda sadece listele
 if [[ "$LIST" == "true" ]]; then
     list_patterns
     exit 0
 fi
 
-# Validation
+# Validasyonlar
 if [[ -z "$PATTERN" ]]; then
-    err "--pattern required"
+    err "--pattern gerekli"
     usage
 fi
 
 if [[ -z "$TASK" ]]; then
-    err "--task required"
+    err "--task gerekli"
     usage
 fi
 
 PATTERN_FILE="$PATTERNS_DIR/${PATTERN}.yaml"
 if [[ ! -f "$PATTERN_FILE" ]]; then
-    err "Pattern not found: $PATTERN_FILE"
-    err "Available patterns:"
+    err "Pattern bulunamadi: $PATTERN_FILE"
+    err "Mevcut pattern'lar:"
     ls "$PATTERNS_DIR"/*.yaml 2>/dev/null | xargs -I{} basename {} .yaml | sed 's/^/  /' >&2
     exit 1
 fi
 
-# Read flow from YAML
+# YAML'dan flow oku
 FLOW="$(yaml_get "$PATTERN_FILE" "flow")"
 AGENTS_MIN="$(yaml_get "$PATTERN_FILE" "agents_min")"
 
 if [[ -z "$FLOW" ]]; then
-    err "'flow' field not found in pattern file: $PATTERN_FILE"
+    err "Pattern dosyasinda 'flow' alani bulunamadi: $PATTERN_FILE"
     exit 1
 fi
 
-# Parse agent list
+# Agent listesini parse et
 CLEAN_AGENTS=()
 if [[ -n "$AGENTS_STR" ]]; then
     IFS=',' read -ra AGENTS <<< "$AGENTS_STR"
@@ -667,9 +663,9 @@ if [[ -n "$AGENTS_STR" ]]; then
     done
 fi
 
-# Cascade and guarded don't require agents
+# Cascade ve guarded icin agent zorunlu degil
 if [[ "$FLOW" != "cascade" ]] && [[ ${#CLEAN_AGENTS[@]} -lt ${AGENTS_MIN:-1} ]]; then
-    # No agents specified — assign defaults
+    # Minimum agent yoksa default isimler ata
     if [[ ${#CLEAN_AGENTS[@]} -eq 0 ]]; then
         case "$FLOW" in
             parallel_then_vote) CLEAN_AGENTS=("analyst" "researcher" "guardian") ;;
@@ -681,32 +677,32 @@ if [[ "$FLOW" != "cascade" ]] && [[ ${#CLEAN_AGENTS[@]} -lt ${AGENTS_MIN:-1} ]];
             guarded)            CLEAN_AGENTS=("executor") ;;
             *)                  CLEAN_AGENTS=("agent-1") ;;
         esac
-        warn "No agents specified, using defaults: ${CLEAN_AGENTS[*]:-}"
+        warn "Agent listesi belirtilmedi, default atandi: ${CLEAN_AGENTS[*]:-}"
     fi
 fi
 
-# Work directory
+# Work dizini
 mkdir -p "$WORK_DIR"
 
-# Summary
+# Ozet
 log "Pattern: $PATTERN (flow=$FLOW)"
 log "Agents: ${CLEAN_AGENTS[*]:-none}"
 log "Task: $(echo "$TASK" | head -c 100)"
 log "Work dir: $WORK_DIR"
 
 if [[ "$DRY_RUN" == "true" ]]; then
-    log "DRY-RUN: would run with the above configuration"
+    log "DRY-RUN: yukaridaki konfigurasyonla calistirilacakti"
     exit 0
 fi
 
-# Dependency checks
+# Dependency kontrolleri
 if [[ ! -x "$BRIDGE" ]]; then
-    err "Bridge not found: $BRIDGE"
+    err "Bridge bulunamadi: $BRIDGE"
     exit 1
 fi
 
 if [[ "$FLOW" == "parallel_then_vote" ]] && [[ ! -f "$CONSENSUS_PY" ]]; then
-    err "Consensus engine not found: $CONSENSUS_PY"
+    err "Consensus engine bulunamadi: $CONSENSUS_PY"
     exit 1
 fi
 
@@ -737,11 +733,11 @@ case "$FLOW" in
         flow_guarded "$TASK" "${CLEAN_AGENTS[@]}"
         ;;
     *)
-        err "Unsupported flow type: $FLOW"
+        err "Desteklenmeyen flow tipi: $FLOW"
         exit 1
         ;;
 esac
 
 EXIT_CODE=$?
-log "Swarm completed (exit=$EXIT_CODE, work_dir=$WORK_DIR)"
+log "Swarm tamamlandi (exit=$EXIT_CODE, work_dir=$WORK_DIR)"
 exit $EXIT_CODE

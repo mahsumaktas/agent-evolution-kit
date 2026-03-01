@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
-#
-# eval.sh — Hybrid heuristic + LLM evaluation for agent outputs
+# Oracle Eval — Hybrid heuristic + LLM evaluation for agent outputs
 # Layer 1: Zero-cost Python heuristics (score 0-100)
 # Layer 2: LLM evaluation via bridge.sh (only for GRAY_ZONE)
 #
-# Usage:
-#   eval.sh --layer1 <file>    # Heuristic only
+# Kullanim:
+#   eval.sh --layer1 <file>    # Sadece heuristic
 #   eval.sh --full <file>      # Layer 1 + conditional Layer 2
-#   eval.sh --score <file>     # Score only (for piping)
+#   eval.sh --score <file>     # Sadece skor (pipe icin)
 
 set -euo pipefail
-
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
 
 # === COLORS ===
 RED='\033[0;31m'
@@ -31,10 +27,10 @@ usage() {
     cat <<EOF
 ${BOLD}eval.sh${NC} — Hybrid heuristic + LLM evaluation
 
-${CYAN}Usage:${NC}
-  eval.sh --layer1 <file>    Heuristic check only
+${CYAN}Kullanim:${NC}
+  eval.sh --layer1 <file>    Sadece heuristic check
   eval.sh --full <file>      Layer 1 + conditional Layer 2
-  eval.sh --score <file>     Score output only (for piping)
+  eval.sh --score <file>     Sadece skor ciktisi (pipe icin)
 
 ${CYAN}Verdicts:${NC}
   Layer 1: ACCEPT (>=80), GRAY_ZONE (40-79), REJECT (<40)
@@ -57,7 +53,7 @@ while [[ $# -gt 0 ]]; do
             if [[ -z "$TARGET_FILE" ]]; then
                 TARGET_FILE="$1"
             else
-                echo -e "${RED}ERROR: Unexpected argument: $1${NC}" >&2
+                echo -e "${RED}HATA: Beklenmeyen arguman: $1${NC}" >&2
                 exit 1
             fi
             shift
@@ -70,7 +66,7 @@ if [[ -z "$MODE" ]] || [[ -z "$TARGET_FILE" ]]; then
 fi
 
 if [[ ! -f "$TARGET_FILE" ]]; then
-    echo -e "${RED}ERROR: File not found: ${TARGET_FILE}${NC}" >&2
+    echo -e "${RED}HATA: Dosya bulunamadi: ${TARGET_FILE}${NC}" >&2
     exit 1
 fi
 
@@ -243,7 +239,7 @@ run_layer2() {
         return 1
     fi
 
-    # Take first 2000 chars
+    # Ilk 2000 char'i al
     local content_preview
     content_preview="$(head -c 2000 "$file")"
 
@@ -279,7 +275,7 @@ l1_score = float(sys.argv[1])
 llm_raw = """${llm_raw}"""
 
 try:
-    # Find JSON (sometimes wrapped in markdown)
+    # JSON'i bul (bazen markdown wrapper olabiliyor)
     json_match = re.search(r'\{[^}]+\}', llm_raw)
     if not json_match:
         raise ValueError("No JSON found in LLM response")
@@ -353,7 +349,7 @@ if [[ "$MODE" == "layer1" ]]; then
     [[ "$l1_verdict" == "GRAY_ZONE" ]] && verdict_color="$YELLOW"
     [[ "$l1_verdict" == "REJECT" ]] && verdict_color="$RED"
 
-    echo -e "${BOLD}=== Eval — Layer 1 (Heuristic) ===${NC}"
+    echo -e "${BOLD}=== Oracle Eval — Layer 1 (Heuristic) ===${NC}"
     echo -e "File:    ${CYAN}${TARGET_FILE}${NC}"
     echo -e "Score:   ${BOLD}${l1_score}${NC}/100"
     echo -e "Verdict: ${verdict_color}${l1_verdict}${NC}"
@@ -383,7 +379,7 @@ if [[ "$MODE" == "full" ]]; then
     [[ "$l1_verdict" == "GRAY_ZONE" ]] && verdict_color="$YELLOW"
     [[ "$l1_verdict" == "REJECT" ]] && verdict_color="$RED"
 
-    echo -e "${BOLD}=== Eval — Full (Layer 1 + Layer 2) ===${NC}"
+    echo -e "${BOLD}=== Oracle Eval — Full (Layer 1 + Layer 2) ===${NC}"
     echo -e "File:    ${CYAN}${TARGET_FILE}${NC}"
     echo -e "\n${BOLD}--- Layer 1 (Heuristic) ---${NC}"
     echo -e "Score:   ${BOLD}${l1_score}${NC}/100"
@@ -401,26 +397,26 @@ for d in data['deductions']:
     fi
 
     if [[ "$l1_verdict" == "ACCEPT" ]]; then
-        echo -e "\n${GREEN}Layer 1 ACCEPT — skipping Layer 2.${NC}"
+        echo -e "\n${GREEN}Layer 1 ACCEPT — Layer 2 atlanıyor.${NC}"
         echo ""
         echo "$l1_json"
         exit 0
     fi
 
     if [[ "$l1_verdict" == "REJECT" ]]; then
-        echo -e "\n${RED}Layer 1 REJECT — skipping Layer 2.${NC}"
+        echo -e "\n${RED}Layer 1 REJECT — Layer 2 atlanıyor.${NC}"
         echo ""
         echo "$l1_json"
         exit 0
     fi
 
-    # GRAY_ZONE -> Layer 2
-    echo -e "\n${YELLOW}GRAY_ZONE — running Layer 2 (LLM)...${NC}"
+    # GRAY_ZONE → Layer 2
+    echo -e "\n${YELLOW}GRAY_ZONE — Layer 2 (LLM) calistiriliyor...${NC}"
 
     l2_json="$(run_layer2 "$TARGET_FILE" "$l1_score" 2>/dev/null)" || l2_json=""
 
     if [[ -z "$l2_json" ]]; then
-        echo -e "${RED}Layer 2 failed — using Layer 1 verdict.${NC}"
+        echo -e "${RED}Layer 2 basarisiz — Layer 1 verdict kullaniliyor.${NC}"
         echo ""
         echo "$l1_json"
         exit 0

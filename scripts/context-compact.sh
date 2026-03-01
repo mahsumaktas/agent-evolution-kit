@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
-#
 # context-compact.sh — Context Compaction wrapper
 # Calls context-compactor.py with the right memory dir.
 #
@@ -12,17 +10,17 @@
 #   context-compact.sh --post-compact
 set -euo pipefail
 
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
+AEK_HOME="${AEK_HOME:-$HOME/clawd}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPACTOR="$SCRIPT_DIR/helpers/context-compactor.py"
 
 if [[ ! -f "$COMPACTOR" ]]; then
-    echo "[context-compact] ERROR: $COMPACTOR not found" >&2
+    echo "[context-compact] HATA: $COMPACTOR bulunamadi" >&2
     exit 1
 fi
 
 if ! command -v python3 &>/dev/null; then
-    echo "[context-compact] ERROR: python3 not found" >&2
+    echo "[context-compact] HATA: python3 bulunamadi" >&2
     exit 1
 fi
 

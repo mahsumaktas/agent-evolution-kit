@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
+# Oracle Circuit Breaker — Per-agent/per-tool circuit breaker state machine
+# 3 state: CLOSED (normal) → OPEN (blocked) → HALF-OPEN (probe)
 #
-# circuit-breaker.sh — Per-agent/per-tool circuit breaker state machine
-# 3 state: CLOSED (normal) -> OPEN (blocked) -> HALF-OPEN (probe)
-#
-# Usage:
+# Kullanim:
 #   circuit-breaker.sh check <name>
 #   circuit-breaker.sh record <name> <success|failure>
 #   circuit-breaker.sh trip <name>
@@ -14,29 +12,27 @@
 
 set -euo pipefail
 
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
-
-STATE_FILE="$AEK_HOME/memory/circuit-breaker-state.json"
+STATE_FILE="$HOME/clawd/memory/circuit-breaker-state.json"
 
 usage() {
     cat >&2 << 'EOF'
-Circuit Breaker — Per-agent/per-tool state machine
+Oracle Circuit Breaker — Per-agent/per-tool state machine
 
-Usage:
-  circuit-breaker.sh check <name>              State check (exit 0=allowed, exit 1=blocked)
-  circuit-breaker.sh record <name> <success|failure>  Record result
-  circuit-breaker.sh trip <name>                Force OPEN
-  circuit-breaker.sh reset <name>               Force CLOSED, reset counters
-  circuit-breaker.sh status                     Show all breaker states
+Kullanim:
+  circuit-breaker.sh check <name>              State kontrol (exit 0=allowed, exit 1=blocked)
+  circuit-breaker.sh record <name> <success|failure>  Sonuc kaydet
+  circuit-breaker.sh trip <name>                Zorla OPEN yap
+  circuit-breaker.sh reset <name>               Zorla CLOSED yap, sayaclari sifirla
+  circuit-breaker.sh status                     Tum breaker'larin durumu
 
 States:
-  CLOSED     Normal — traffic allowed
-  OPEN       Blocked — too many errors, waiting for cooldown
-  HALF-OPEN  Probe — cooldown expired, single probe allowed
+  CLOSED     Normal — trafik acik
+  OPEN       Engelli — cok fazla hata, cooldown bekliyor
+  HALF-OPEN  Deneme — cooldown bitti, tek probe izinli
 
 Defaults:
-  threshold=3 (consecutive failure limit)
-  cooldown=300s (OPEN duration)
+  threshold=3 (ardisik hata limiti)
+  cooldown=300s (OPEN suresi)
 EOF
     exit 1
 }
@@ -106,7 +102,7 @@ def get_breaker(data, name):
     return data["breakers"][name]
 
 def effective_state(breaker):
-    """If OPEN, check cooldown — return HALF-OPEN if expired."""
+    """OPEN ise cooldown kontrolu yap — suresi dolduysa HALF-OPEN dondur."""
     if breaker["state"] != "OPEN":
         return breaker["state"]
 
@@ -126,7 +122,7 @@ def effective_state(breaker):
     return "OPEN"
 
 def remaining_cooldown(breaker):
-    """Remaining cooldown seconds for OPEN state."""
+    """OPEN state icin kalan cooldown saniyesi."""
     if breaker["state"] != "OPEN":
         return 0
     cooldown = breaker["config"]["cooldown_seconds"]
@@ -154,7 +150,7 @@ def state_color(state):
 
 if command == "check":
     if len(args) < 1:
-        print(f"{RED}ERROR: 'check' command requires <name>{NC}", file=sys.stderr)
+        print(f"{RED}HATA: 'check' komutu icin <name> gerekli{NC}", file=sys.stderr)
         sys.exit(1)
 
     name = args[0]
@@ -162,7 +158,7 @@ if command == "check":
     breaker = get_breaker(data, name)
     eff = effective_state(breaker)
 
-    # Persist OPEN->HALF-OPEN transition
+    # OPEN→HALF-OPEN gecisini persist et
     if eff == "HALF-OPEN" and breaker["state"] == "OPEN":
         breaker["state"] = "HALF-OPEN"
         breaker["last_state_change"] = now_iso()
@@ -173,7 +169,7 @@ if command == "check":
 
     if eff == "OPEN":
         rem = remaining_cooldown(breaker)
-        print(f" (cooldown: {rem}s remaining)")
+        print(f" (cooldown: {rem}s kaldi)")
         save_state(data)
         sys.exit(1)
     else:
@@ -183,21 +179,21 @@ if command == "check":
 
 elif command == "record":
     if len(args) < 2:
-        print(f"{RED}ERROR: 'record' command requires <name> <success|failure>{NC}", file=sys.stderr)
+        print(f"{RED}HATA: 'record' komutu icin <name> <success|failure> gerekli{NC}", file=sys.stderr)
         sys.exit(1)
 
     name = args[0]
     result = args[1].lower()
 
     if result not in ("success", "failure"):
-        print(f"{RED}ERROR: Result must be 'success' or 'failure', got: {result}{NC}", file=sys.stderr)
+        print(f"{RED}HATA: Sonuc 'success' veya 'failure' olmali, verilen: {result}{NC}", file=sys.stderr)
         sys.exit(1)
 
     data = load_state()
     breaker = get_breaker(data, name)
     eff = effective_state(breaker)
 
-    # Persist OPEN->HALF-OPEN transition
+    # OPEN→HALF-OPEN gecisi olmussa persist et
     if eff == "HALF-OPEN" and breaker["state"] == "OPEN":
         breaker["state"] = "HALF-OPEN"
         breaker["last_state_change"] = now_iso()
@@ -209,7 +205,7 @@ elif command == "record":
             breaker["state"] = "CLOSED"
             breaker["last_state_change"] = now_iso()
         color = GREEN
-        print(f"{color}[CB] {name}: {result} recorded{NC}", end="")
+        print(f"{color}[CB] {name}: {result} kaydedildi{NC}", end="")
         if old_state != breaker["state"]:
             print(f" ({old_state} -> {breaker['state']})")
         else:
@@ -224,7 +220,7 @@ elif command == "record":
         old_state = breaker["state"]
 
         if breaker["state"] == "HALF-OPEN":
-            # Probe failed — back to OPEN
+            # Probe basarisiz — tekrar OPEN
             breaker["state"] = "OPEN"
             breaker["last_state_change"] = now_iso()
         elif breaker["state"] == "CLOSED" and breaker["consecutive_failures"] >= threshold:
@@ -232,7 +228,7 @@ elif command == "record":
             breaker["last_state_change"] = now_iso()
 
         color = RED if breaker["state"] == "OPEN" else YELLOW
-        print(f"{color}[CB] {name}: {result} recorded (consecutive: {breaker['consecutive_failures']}/{threshold}){NC}", end="")
+        print(f"{color}[CB] {name}: {result} kaydedildi (ardisik: {breaker['consecutive_failures']}/{threshold}){NC}", end="")
         if old_state != breaker["state"]:
             print(f" ({old_state} -> {breaker['state']})")
         else:
@@ -242,7 +238,7 @@ elif command == "record":
 
 elif command == "trip":
     if len(args) < 1:
-        print(f"{RED}ERROR: 'trip' command requires <name>{NC}", file=sys.stderr)
+        print(f"{RED}HATA: 'trip' komutu icin <name> gerekli{NC}", file=sys.stderr)
         sys.exit(1)
 
     name = args[0]
@@ -252,11 +248,11 @@ elif command == "trip":
     breaker["state"] = "OPEN"
     breaker["last_state_change"] = now_iso()
     save_state(data)
-    print(f"{RED}[CB] {name}: OPEN (forced, previous: {old_state}){NC}")
+    print(f"{RED}[CB] {name}: OPEN (zorla acildi, onceki: {old_state}){NC}")
 
 elif command == "reset":
     if len(args) < 1:
-        print(f"{RED}ERROR: 'reset' command requires <name>{NC}", file=sys.stderr)
+        print(f"{RED}HATA: 'reset' komutu icin <name> gerekli{NC}", file=sys.stderr)
         sys.exit(1)
 
     name = args[0]
@@ -269,14 +265,14 @@ elif command == "reset":
     breaker["last_failure"] = None
     breaker["last_state_change"] = now_iso()
     save_state(data)
-    print(f"{GREEN}[CB] {name}: CLOSED (reset, previous: {old_state}){NC}")
+    print(f"{GREEN}[CB] {name}: CLOSED (sifirlandi, onceki: {old_state}){NC}")
 
 elif command == "status":
     data = load_state()
     breakers = data.get("breakers", {})
 
     if not breakers:
-        print(f"{YELLOW}No circuit breakers registered.{NC}")
+        print(f"{YELLOW}Kayitli circuit breaker yok.{NC}")
         sys.exit(0)
 
     print(f"\n{BOLD}{CYAN}=== Circuit Breaker Status ==={NC}\n")
@@ -298,7 +294,7 @@ elif command == "status":
 
         if eff == "OPEN":
             rem = remaining_cooldown(b)
-            line += f" (remaining: {rem}s)"
+            line += f" (kalan: {rem}s)"
 
         print(line)
 
@@ -308,7 +304,7 @@ elif command == "status":
     print()
 
 else:
-    print(f"{RED}ERROR: Unknown command: {command}{NC}", file=sys.stderr)
-    print(f"Usage: circuit-breaker.sh check|record|trip|reset|status", file=sys.stderr)
+    print(f"{RED}HATA: Bilinmeyen komut: {command}{NC}", file=sys.stderr)
+    print(f"Kullanim: circuit-breaker.sh check|record|trip|reset|status", file=sys.stderr)
     sys.exit(1)
 PYEOF

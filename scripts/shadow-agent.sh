@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
-#
 # shadow-agent.sh — Shadow agent observer system
 # Reads config/shadow-agents.yaml, runs observer reviews on trigger conditions.
 #
@@ -10,7 +8,7 @@
 #   shadow-agent.sh batch
 set -euo pipefail
 
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
+AEK_HOME="${AEK_HOME:-$HOME/clawd}"
 CONFIG="$AEK_HOME/config/shadow-agents.yaml"
 BRIDGE="$AEK_HOME/scripts/bridge.sh"
 SHADOW_DIR="$AEK_HOME/memory/shadow-reviews"
@@ -161,7 +159,7 @@ run_review() {
 
     # Find matching observer
     match=$(find_observer "$target" "$trigger") || {
-        warn "No matching observer found: target=$target trigger=$trigger"
+        warn "Eslesen observer bulunamadi: target=$target trigger=$trigger"
         return 1
     }
 
@@ -172,18 +170,17 @@ import sys,json; d=json.load(sys.stdin)
 print(d['observer'], d['model'], d['max_reviews_per_day'], d['mode'], sep='\t')
 ")
 
-
     # Daily limit check
     local today_count
     today_count=$(count_today_reviews "$target" "$observer")
     if [[ "$today_count" -ge "$max_limit" ]]; then
-        warn "Daily limit exceeded: $observer -> $target ($today_count/$max_limit)"
+        warn "Gunluk limit asildi: $observer -> $target ($today_count/$max_limit)"
         return 2
     fi
 
     # Cooldown check
     if check_cooldown "$target" "$trigger"; then
-        warn "Cooldown active: $target+$trigger (reviewed within last ${COOLDOWN_HOURS}h)"
+        warn "Cooldown aktif: $target+$trigger (son ${COOLDOWN_HOURS}s icinde review yapilmis)"
         return 3
     fi
 
@@ -206,18 +203,18 @@ Review concisely (max 100 words):
 2. Specific observations (1-3 bullet points)
 3. One actionable recommendation (if any)"
 
-    log "Starting review: $observer -> $target (trigger: $trigger, model: $model)"
+    log "Review baslatiliyor: $observer -> $target (trigger: $trigger, model: $model)"
 
     local outfile="$SHADOW_DIR/${TODAY}-${target}-${trigger}-$(date +%H%M%S).md"
     local result
 
     if [[ -x "$BRIDGE" ]]; then
         result=$("$BRIDGE" --quick --text --silent "$prompt" 2>/dev/null) || {
-            err "Bridge call failed"
+            err "Bridge cagrisi basarisiz"
             return 4
         }
     else
-        err "Bridge not found: $BRIDGE"
+        err "Bridge bulunamadi: $BRIDGE"
         return 127
     fi
 
@@ -233,7 +230,7 @@ Review concisely (max 100 words):
         echo "$result"
     } > "$outfile"
 
-    log "Review saved: $outfile"
+    log "Review kaydedildi: $outfile"
     echo "$outfile"
 }
 
@@ -266,13 +263,10 @@ for s in config["shadows"]:
     # Count today's reviews
     pattern = os.path.join(shadow_dir, f"{today}-{tgt}-*.md")
     today_files = []
-    for f in glob.glob(pattern):
-        try:
-            with open(f) as fh:
-                if fh.readline().find(f"Observer: {obs}") >= 0:
-                    today_files.append(f)
-        except (OSError, IOError):
-            continue
+    for tf in glob.glob(pattern):
+        with open(tf) as fh:
+            if fh.readline().find(f"Observer: {obs}") >= 0:
+                today_files.append(tf)
     count = len(today_files)
 
     status_icon = "OK" if count < limit else "LIMIT"
@@ -295,18 +289,18 @@ PYEOF
         echo "  $(basename "$f")"
     done
     if [[ "$found_reviews" == "false" ]]; then
-        echo "  (no reviews yet)"
+        echo "  (henuz review yok)"
     fi
 }
 
 # --- BATCH command ---
 cmd_batch() {
     if [[ ! -f "$TRAJECTORY" ]]; then
-        warn "Trajectory pool not found: $TRAJECTORY"
+        warn "Trajectory pool bulunamadi: $TRAJECTORY"
         return 1
     fi
 
-    log "Starting batch review (last 24 hours, max 5 entries)..."
+    log "Batch review baslatiliyor (son 24 saat, max 5 entry)..."
 
     local entries
     entries=$(python3 - "$TRAJECTORY" <<'PYEOF'
@@ -344,16 +338,16 @@ PYEOF
     count=$(echo "$entries" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
 
     if [[ "$count" -eq 0 ]]; then
-        log "No trajectory entries found in last 24 hours."
+        log "Son 24 saatte trajectory entry bulunamadi."
         return 0
     fi
 
-    log "$count entries found, reviewing..."
+    log "$count entry bulundu, review ediliyor..."
 
     local reviewed=0
     # Use NUL-delimited output to handle multiline task fields safely
+    # Process substitution avoids subshell scope issue with reviewed counter
     while IFS=$'\t' read -r -d '' caller task result; do
-        # task_complete trigger for all trajectory entries
         log "Batch review: caller=$caller result=$result"
         run_review "$caller" "task_complete" "Task: $task | Result: $result" 2>/dev/null && {
             reviewed=$((reviewed + 1))
@@ -367,7 +361,7 @@ for e in json.load(sys.stdin):
     sys.stdout.write(f'{caller}\t{task}\t{result}\0')
 ")
 
-    log "Batch completed."
+    log "Batch tamamlandi: $reviewed review yapildi."
 }
 
 # --- USAGE ---
@@ -375,22 +369,22 @@ usage() {
     cat >&2 << 'EOF'
 shadow-agent.sh — Shadow agent observer system
 
-Usage:
+Kullanim:
   shadow-agent.sh review --target <agent> --trigger <trigger>
   shadow-agent.sh status
   shadow-agent.sh batch
 
-Commands:
-  review    Run observer review (matching config)
-  status    Show all shadow configurations and today's review counts
-  batch     Batch review recent trajectory entries (last 24h)
+Komutlar:
+  review    Observer review calistir (matching config'e gore)
+  status    Tum shadow konfigurasyonlarini ve bugunun review sayilarini goster
+  batch     Son 24 saatteki trajectory entry'lerini toplu review et
 
-Review Options:
-  --target <agent>     Target agent name
-  --trigger <trigger>  Trigger type (e.g.: code_written, security_risk, task_complete)
+Review Secenekleri:
+  --target <agent>     Hedef agent adi (orn: writer, scout, finance-agent)
+  --trigger <trigger>  Tetikleyici (orn: code_written, security_risk, task_complete)
 
-Context can also be provided via stdin:
-  echo "task output" | shadow-agent.sh review --target writer-agent --trigger code_written
+Context stdin uzerinden de verilebilir:
+  echo "task output" | shadow-agent.sh review --target writer --trigger code_written
 EOF
     exit 1
 }
@@ -402,7 +396,7 @@ fi
 
 # Pre-flight checks
 if [[ ! -f "$CONFIG" ]]; then
-    err "Config not found: $CONFIG"
+    err "Config bulunamadi: $CONFIG"
     exit 1
 fi
 
@@ -417,11 +411,11 @@ case "$COMMAND" in
                 --target)  TARGET="$2"; shift 2;;
                 --trigger) TRIGGER="$2"; shift 2;;
                 --help|-h) usage;;
-                *)         err "Unknown option: $1"; usage;;
+                *)         err "Bilinmeyen secenek: $1"; usage;;
             esac
         done
         if [[ -z "$TARGET" || -z "$TRIGGER" ]]; then
-            err "--target and --trigger are required"
+            err "--target ve --trigger zorunlu"
             usage
         fi
         run_review "$TARGET" "$TRIGGER"
@@ -436,7 +430,7 @@ case "$COMMAND" in
         usage
         ;;
     *)
-        err "Unknown command: $COMMAND"
+        err "Bilinmeyen komut: $COMMAND"
         usage
         ;;
 esac

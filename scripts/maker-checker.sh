@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
-#
 # maker-checker.sh — Maker-Checker dual verification loop
-# Sends maker output to a checker agent, runs APPROVE/ISSUE/REJECT loop.
+# Maker ciktisini checker agent'a gonderir, APPROVE/ISSUE/REJECT dongusu calistirir.
 #
-# Usage:
+# Kullanim:
 #   maker-checker.sh --maker <agent> --checker <agent> --task "desc" --input <file>
 #   maker-checker.sh --auto --maker <agent> --task "desc" --input <file>
 
 set -euo pipefail
 
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
-
 # === PATHS ===
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRIDGE="$SCRIPT_DIR/bridge.sh"
-CONFIG="$AEK_HOME/config/maker-checker-pairs.yaml"
-TRAJECTORY_FILE="$AEK_HOME/memory/trajectory-pool.json"
+CONFIG="$HOME/clawd/config/maker-checker-pairs.yaml"
+TRAJECTORY_FILE="$HOME/clawd/memory/trajectory-pool.json"
 
 # === COLORS ===
 RED='\033[0;31m'
@@ -50,34 +46,34 @@ make_temp() {
 # === USAGE ===
 usage() {
     cat >&2 << 'EOF'
-Maker-Checker — Dual verification loop
+Oracle Maker-Checker — Dual verification loop
 
-Usage:
+Kullanim:
   maker-checker.sh --maker <agent> --checker <agent> --task "desc" --input <file>
   maker-checker.sh --auto --maker <agent> --task "desc" --input <file>
 
-Options:
-  --maker <agent>     Maker agent name
-  --checker <agent>   Checker agent name (auto-selected with --auto)
-  --auto              Auto-select checker from config
-  --task "desc"       Task description
-  --input <file>      File containing maker output
-  --max-iter <N>      Maximum iterations (default: 3)
-  --help              Show this message
+Secenekler:
+  --maker <agent>     Maker agent adi
+  --checker <agent>   Checker agent adi (--auto ile otomatik secilir)
+  --auto              Config'den checker'i otomatik sec
+  --task "desc"       Gorev tanimi
+  --input <file>      Maker ciktisini iceren dosya
+  --max-iter <N>      Maksimum iterasyon (default: 3)
+  --help              Bu mesaji goster
 EOF
     exit 1
 }
 
 # === AUTO-SELECT CHECKER ===
-# Parses YAML with Python (no pyyaml dependency — line-by-line parsing)
+# YAML'i Python ile parse eder (pyyaml bagimliligi yok — satir satir okur)
 auto_select_checker() {
     local maker="$1"
     local task="$2"
     local config_file="$3"
 
     if [[ ! -f "$config_file" ]]; then
-        err "Config file not found: $config_file"
-        echo "default"
+        err "Config dosyasi bulunamadi: $config_file"
+        echo "oracle"
         return
     fi
 
@@ -88,7 +84,7 @@ maker = sys.argv[1]
 task_desc = sys.argv[2].lower()
 config_path = sys.argv[3]
 
-# Parse YAML line by line — simple pairs list
+# YAML'i satir satir parse et — basit pairs listesi
 pairs = []
 current = {}
 in_pairs = False
@@ -96,7 +92,7 @@ in_pairs = False
 with open(config_path) as f:
     for line in f:
         stripped = line.strip()
-        # Comment or empty line
+        # Yorum veya bos satir
         if not stripped or stripped.startswith('#'):
             continue
         if stripped == 'pairs:':
@@ -105,7 +101,7 @@ with open(config_path) as f:
         if not in_pairs:
             continue
 
-        # New pair start
+        # Yeni pair baslangici
         if stripped.startswith('- maker:'):
             if current:
                 pairs.append(current)
@@ -113,7 +109,7 @@ with open(config_path) as f:
         elif stripped.startswith('checker:'):
             current['checker'] = stripped.split(':', 1)[1].strip().strip('"').strip("'")
         elif stripped.startswith('domains:'):
-            # Parse [blog, documentation, report, content] format
+            # [blog, documentation, report, content] formatini parse et
             domain_str = stripped.split(':', 1)[1].strip()
             if domain_str.startswith('[') and domain_str.endswith(']'):
                 domains = [d.strip().strip('"').strip("'") for d in domain_str[1:-1].split(',')]
@@ -135,7 +131,7 @@ for pair in pairs:
             if domain != '*' and domain in task_desc:
                 best = pair
                 break
-        # Exact maker match but no domain match — still a candidate
+        # Exact maker match ama domain eslesmedi — yine de aday
         if not best and pair.get('maker') != '*':
             best = pair
 
@@ -146,11 +142,11 @@ if not best:
             best = pair
             break
 
-# 3. Nothing matched
+# 3. Hicbir sey eslesmedi
 if not best:
-    print('default')
+    print('oracle')
 else:
-    print(best.get('checker', 'default'))
+    print(best.get('checker', 'oracle'))
 PYEOF
 }
 
@@ -161,7 +157,7 @@ update_trajectory_checker() {
     local iterations="$3"
 
     if [[ ! -f "$TRAJECTORY_FILE" ]]; then
-        warn "Trajectory file not found, skipping update"
+        warn "Trajectory dosyasi yok, guncelleme atlaniyor"
         return 0
     fi
 
@@ -182,7 +178,7 @@ try:
 except (json.JSONDecodeError, ValueError):
     sys.exit(0)
 
-# Dict format — entries under "entries" key
+# Dict format — entries key'i altinda
 if isinstance(data, dict):
     entries = data.get("entries", [])
 elif isinstance(data, list):
@@ -190,7 +186,7 @@ elif isinstance(data, list):
 else:
     sys.exit(0)
 
-# Update last entry
+# Son entry'yi guncelle
 if entries:
     entries[-1]["checker_agent"] = checker_agent
     entries[-1]["checker_result"] = checker_result
@@ -223,29 +219,29 @@ while [[ $# -gt 0 ]]; do
         --input)    INPUT_FILE="$2"; shift 2;;
         --max-iter) MAX_ITER="$2"; shift 2;;
         --help|-h)  usage;;
-        *)          err "Unknown parameter: $1"; usage;;
+        *)          err "Bilinmeyen parametre: $1"; usage;;
     esac
 done
 
 # === VALIDATION ===
 if [[ -z "$MAKER" ]]; then
-    err "--maker parameter is required"
+    err "--maker parametresi zorunlu"
     usage
 fi
 if [[ -z "$TASK" ]]; then
-    err "--task parameter is required"
+    err "--task parametresi zorunlu"
     usage
 fi
 if [[ -z "$INPUT_FILE" ]]; then
-    err "--input parameter is required"
+    err "--input parametresi zorunlu"
     usage
 fi
 if [[ ! -f "$INPUT_FILE" ]]; then
-    err "Input file not found: $INPUT_FILE"
+    err "Input dosyasi bulunamadi: $INPUT_FILE"
     exit 1
 fi
 if [[ ! -x "$BRIDGE" ]]; then
-    err "Bridge script not found or not executable: $BRIDGE"
+    err "Bridge script bulunamadi veya calistirilamaz: $BRIDGE"
     exit 1
 fi
 
@@ -254,20 +250,20 @@ if [[ "$AUTO" == true ]]; then
     CHECKER="$(auto_select_checker "$MAKER" "$TASK" "$CONFIG")"
     log "Auto-selected checker: $CHECKER"
 elif [[ -z "$CHECKER" ]]; then
-    err "--checker or --auto parameter required"
+    err "--checker veya --auto parametresi gerekli"
     usage
 fi
 
 # === READ INPUT ===
 CONTENT="$(cat "$INPUT_FILE")"
 if [[ -z "$CONTENT" ]]; then
-    err "Input file is empty: $INPUT_FILE"
+    err "Input dosyasi bos: $INPUT_FILE"
     exit 1
 fi
 
 log "Maker: $MAKER | Checker: $CHECKER | Task: $TASK"
-log "Max iterations: $MAX_ITER"
-info "Input size: $(wc -c < "$INPUT_FILE" | tr -d ' ') bytes"
+log "Max iterasyon: $MAX_ITER"
+info "Input boyutu: $(wc -c < "$INPUT_FILE" | tr -d ' ') byte"
 
 # === MAIN LOOP ===
 CURRENT_CONTENT="$CONTENT"
@@ -276,12 +272,12 @@ FINAL_RESULT="ISSUE"
 
 while [[ $ITERATION -lt $MAX_ITER ]]; do
     ITERATION=$((ITERATION + 1))
-    log "--- Iteration $ITERATION/$MAX_ITER ---"
+    log "--- Iterasyon $ITERATION/$MAX_ITER ---"
 
-    # Limit content to 3000 chars for checker prompt
+    # Content'i 3000 char ile sinirla (checker prompt icin)
     CONTENT_TRIMMED="$(echo "$CURRENT_CONTENT" | head -c 3000)"
 
-    # Build checker prompt
+    # Checker prompt'u olustur
     CHECKER_PROMPT="You are a checker reviewing work by ${MAKER}.
 Task: ${TASK}
 
@@ -293,12 +289,12 @@ Review this output and respond with EXACTLY one of:
 Output to review:
 ${CONTENT_TRIMMED}"
 
-    # Send to checker
-    log "Sending to checker ($CHECKER)..."
+    # Checker'a gonder
+    log "Checker'a ($CHECKER) gonderiyor..."
     CHECKER_RESPONSE_FILE="$(make_temp)"
 
     if ! "$BRIDGE" --quick --text --silent "$CHECKER_PROMPT" > "$CHECKER_RESPONSE_FILE" 2>/dev/null; then
-        warn "Bridge call failed — accepting maker output (fallback)"
+        warn "Bridge cagrisi basarisiz — maker ciktisi kabul ediliyor (fallback)"
         FINAL_RESULT="APPROVE-FALLBACK"
         break
     fi
@@ -306,33 +302,33 @@ ${CONTENT_TRIMMED}"
     CHECKER_RESPONSE="$(cat "$CHECKER_RESPONSE_FILE")"
 
     if [[ -z "$CHECKER_RESPONSE" ]]; then
-        warn "Checker returned empty response — accepting maker output (fallback)"
+        warn "Checker bos yanit dondu — maker ciktisi kabul ediliyor (fallback)"
         FINAL_RESULT="APPROVE-FALLBACK"
         break
     fi
 
-    # Parse response
+    # Response'u parse et
     if echo "$CHECKER_RESPONSE" | grep -qi "^APPROVE"; then
-        log "Checker APPROVE"
+        log "Checker APPROVE verdi"
         FINAL_RESULT="APPROVE"
         break
     elif echo "$CHECKER_RESPONSE" | grep -qi "^REJECT"; then
         REJECT_REASON="$(echo "$CHECKER_RESPONSE" | grep -oi "^REJECT:.*" | head -1)"
-        err "Checker REJECT: $REJECT_REASON"
+        err "Checker REJECT verdi: $REJECT_REASON"
         FINAL_RESULT="REJECT"
         break
     elif echo "$CHECKER_RESPONSE" | grep -qi "^ISSUE"; then
         FEEDBACK="$(echo "$CHECKER_RESPONSE" | grep -oi "^ISSUE:.*" | head -1)"
-        warn "Checker ISSUE: $FEEDBACK"
+        warn "Checker ISSUE verdi: $FEEDBACK"
 
         if [[ $ITERATION -ge $MAX_ITER ]]; then
-            warn "Max iterations reached — accepting last version"
+            warn "Maksimum iterasyona ulasildi — son haliyle kabul ediliyor"
             FINAL_RESULT="ISSUE-MAX-ITER"
             break
         fi
 
-        # Send to maker for revision
-        log "Sending to maker ($MAKER) for revision..."
+        # Revision icin maker'a gonder
+        log "Maker'a ($MAKER) revision icin gonderiyor..."
         CONTENT_FOR_REVISION="$(echo "$CURRENT_CONTENT" | head -c 2000)"
 
         REVISION_PROMPT="Your previous output was reviewed and needs improvement.
@@ -345,29 +341,29 @@ Revise your output addressing the feedback."
         REVISION_FILE="$(make_temp)"
 
         if ! "$BRIDGE" --quick --text --silent "$REVISION_PROMPT" > "$REVISION_FILE" 2>/dev/null; then
-            warn "Revision bridge call failed — continuing with current version"
+            warn "Revision bridge cagrisi basarisiz — mevcut haliyle devam ediliyor"
             continue
         fi
 
         REVISED="$(cat "$REVISION_FILE")"
         if [[ -n "$REVISED" ]]; then
             CURRENT_CONTENT="$REVISED"
-            info "Revision received ($(echo "$REVISED" | wc -c | tr -d ' ') bytes)"
+            info "Revision alindi ($(echo "$REVISED" | wc -c | tr -d ' ') byte)"
         else
-            warn "Empty revision returned — continuing with current version"
+            warn "Bos revision dondu — mevcut haliyle devam ediliyor"
         fi
     else
-        # None of the expected formats matched — check full response
+        # Beklenen formatlardan hicbiri eslesmedi — tum yaniti kontrol et
         if echo "$CHECKER_RESPONSE" | grep -qi "approve"; then
-            log "Checker APPROVE (inline)"
+            log "Checker APPROVE verdi (satir ici)"
             FINAL_RESULT="APPROVE"
             break
         elif echo "$CHECKER_RESPONSE" | grep -qi "reject"; then
-            err "Checker REJECT (inline)"
+            err "Checker REJECT verdi (satir ici)"
             FINAL_RESULT="REJECT"
             break
         else
-            warn "Could not parse checker response — accepting maker output (fallback)"
+            warn "Checker yaniti parse edilemedi — maker ciktisi kabul ediliyor (fallback)"
             FINAL_RESULT="APPROVE-FALLBACK"
             break
         fi
@@ -380,20 +376,20 @@ echo "$CURRENT_CONTENT"
 # === TRAJECTORY UPDATE ===
 if [[ "$FINAL_RESULT" == "APPROVE" || "$FINAL_RESULT" == "APPROVE-FALLBACK" ]]; then
     update_trajectory_checker "$CHECKER" "$FINAL_RESULT" "$ITERATION"
-    log "Trajectory updated: checker=$CHECKER, result=$FINAL_RESULT, iterations=$ITERATION"
+    log "Trajectory guncellendi: checker=$CHECKER, result=$FINAL_RESULT, iterations=$ITERATION"
 fi
 
 # === SUMMARY ===
-log "=== Result ==="
+log "=== Sonuc ==="
 log "  Maker: $MAKER"
 log "  Checker: $CHECKER"
-log "  Iterations: $ITERATION/$MAX_ITER"
-log "  Result: $FINAL_RESULT"
+log "  Iterasyon: $ITERATION/$MAX_ITER"
+log "  Sonuc: $FINAL_RESULT"
 
 case "$FINAL_RESULT" in
     APPROVE)          exit 0;;
     APPROVE-FALLBACK) exit 0;;
-    ISSUE-MAX-ITER)   warn "Max iteration warning — last version used"; exit 0;;
-    REJECT)           err "Rejected by checker"; exit 1;;
+    ISSUE-MAX-ITER)   warn "Max iterasyon uyarisi — son versiyon kullanildi"; exit 0;;
+    REJECT)           err "Checker tarafindan reddedildi"; exit 1;;
     *)                exit 1;;
 esac

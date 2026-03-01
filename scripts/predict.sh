@@ -1,30 +1,22 @@
 #!/usr/bin/env bash
-# Part of Agent Evolution Kit — https://github.com/mahsumaktas/agent-evolution-kit
+# Oracle Predictive Engine — Gecmis deneyimlerden gelecek tahmini
+# Trajectory pool, reflections ve evolution log'u analiz eder.
 #
-# predict.sh — Predictive engine using trajectory pool analysis
-#
-# Analyzes past task executions to predict outcomes, identify risks,
-# and discover opportunities. Uses bridge.sh for LLM analysis when
-# available, falls back to heuristic summary.
-#
-# Usage:
-#   predict.sh --weekly          Weekly prediction report
-#   predict.sh --task "type"     Predict success for a task type
-#   predict.sh --risk            Risk analysis
-#   predict.sh --opportunity     Opportunity detection
+# Kullanim:
+#   predict.sh --weekly          # Haftalik tahmin raporu
+#   predict.sh --task "cve scan" # Belirli gorev tipi tahmini
+#   predict.sh --risk            # Risk analizi
+#   predict.sh --opportunity     # Firsat tespiti
 
 set -euo pipefail
 
-# === Configuration ===
-AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
-BRIDGE="$AEK_HOME/scripts/bridge.sh"
-TRAJECTORY="$AEK_HOME/memory/trajectory-pool.json"
-EVOLUTION_LOG="$AEK_HOME/memory/evolution-log.md"
-REFLECTIONS_DIR="$AEK_HOME/memory/reflections"
-KNOWLEDGE_DIR="$AEK_HOME/memory/knowledge"
-PREDICT_DIR="$AEK_HOME/memory/predictions"
+BRIDGE="$HOME/clawd/scripts/bridge.sh"
+TRAJECTORY="$HOME/clawd/memory/trajectory-pool.json"
+EVOLUTION_LOG="$HOME/clawd/memory/evolution-log.md"
+REFLECTIONS_DIR="$HOME/clawd/memory/reflections"
+KNOWLEDGE_DIR="$HOME/clawd/memory/knowledge"
+PREDICT_DIR="$HOME/clawd/memory/predictions"
 
-# === Colors ===
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 NC='\033[0m'
@@ -32,7 +24,6 @@ NC='\033[0m'
 log() { echo -e "${GREEN}[predict]${NC} $1" >&2; }
 step() { echo -e "${CYAN}[predict]${NC} === $1 ===" >&2; }
 
-# === Parse Arguments ===
 MODE="weekly"
 TASK_TYPE=""
 
@@ -43,7 +34,7 @@ while [[ $# -gt 0 ]]; do
         --risk)        MODE="risk"; shift;;
         --opportunity) MODE="opportunity"; shift;;
         --help|-h)
-            echo "Usage: predict.sh [--weekly | --task \"type\" | --risk | --opportunity]"
+            echo "Kullanim: predict.sh [--weekly | --task \"tip\" | --risk | --opportunity]"
             exit 0;;
         *) shift;;
     esac
@@ -51,20 +42,19 @@ done
 
 mkdir -p "$PREDICT_DIR"
 
-# === Gather Data ===
-step "DATA COLLECTION"
+# === GATHER DATA ===
+step "VERI TOPLAMA"
 
-TRAJECTORY_STATS=$(python3 - "$TRAJECTORY" <<'PYEOF'
-import json, os, sys
+# Trajectory stats
+TRAJECTORY_STATS=$(python3 -c "
+import json, os
 from collections import Counter, defaultdict
+from datetime import datetime, timedelta
 
 try:
-    with open(sys.argv[1]) as f:
+    with open('$TRAJECTORY') as f:
         pool = json.load(f)
-    if isinstance(pool, list):
-        entries = pool
-    else:
-        entries = pool.get('entries', pool.get('trajectories', []))
+    entries = pool.get('entries', [])
 except:
     entries = []
 
@@ -74,8 +64,8 @@ if not entries:
     exit()
 
 total = len(entries)
-success = sum(1 for e in entries if e.get('result','').upper() in ('SUCCESS','COMPLETED'))
-failed = sum(1 for e in entries if e.get('result','').upper() in ('FAILED','ERROR'))
+success = sum(1 for e in entries if e.get('result') == 'SUCCESS')
+failed = sum(1 for e in entries if e.get('result') == 'FAILED')
 partial = total - success - failed
 
 # By agent
@@ -83,17 +73,20 @@ agent_stats = defaultdict(lambda: {'success': 0, 'total': 0, 'tokens': 0})
 for e in entries:
     agent = e.get('agent', 'unknown')
     agent_stats[agent]['total'] += 1
-    agent_stats[agent]['tokens'] += e.get('tokens_used', e.get('turns', 0))
-    if e.get('result','').upper() in ('SUCCESS','COMPLETED'):
+    agent_stats[agent]['tokens'] += e.get('tokens_used', 0)
+    if e.get('result') == 'SUCCESS':
         agent_stats[agent]['success'] += 1
 
 # By task type
 type_stats = defaultdict(lambda: {'success': 0, 'total': 0})
 for e in entries:
-    tt = e.get('task_type', e.get('task', 'unknown'))[:30]
+    tt = e.get('task_type', 'unknown')
     type_stats[tt]['total'] += 1
-    if e.get('result','').upper() in ('SUCCESS','COMPLETED'):
+    if e.get('result') == 'SUCCESS':
         type_stats[tt]['success'] += 1
+
+# Failure reasons
+fail_reasons = Counter(e.get('failure_reason', 'unknown') for e in entries if e.get('result') == 'FAILED')
 
 print(f'TOTAL_TASKS={total}')
 print(f'SUCCESS_RATE={success/total*100:.1f}')
@@ -103,14 +96,17 @@ print()
 print('AGENT_STATS:')
 for agent, stats in sorted(agent_stats.items()):
     rate = stats['success']/stats['total']*100 if stats['total'] > 0 else 0
-    print(f'  {agent}: {rate:.0f}% success ({stats[\"total\"]} tasks)')
+    print(f'  {agent}: {rate:.0f}% basari ({stats[\"total\"]} gorev, {stats[\"tokens\"]:,} token)')
 print()
 print('TASK_TYPE_STATS:')
 for tt, stats in sorted(type_stats.items()):
     rate = stats['success']/stats['total']*100 if stats['total'] > 0 else 0
-    print(f'  {tt}: {rate:.0f}% success ({stats[\"total\"]} tasks)')
-PYEOF
-) || TRAJECTORY_STATS="TRAJECTORY_EMPTY=true"
+    print(f'  {tt}: {rate:.0f}% basari ({stats[\"total\"]} gorev)')
+print()
+print('TOP_FAILURES:')
+for reason, count in fail_reasons.most_common(5):
+    print(f'  {reason}: {count}x')
+" 2>/dev/null) || TRAJECTORY_STATS="TRAJECTORY_EMPTY=true"
 
 # Reflection count
 REFLECTION_COUNT=$(find "$REFLECTIONS_DIR" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
@@ -119,98 +115,76 @@ REFLECTION_COUNT=$(find "$REFLECTIONS_DIR" -name "*.md" 2>/dev/null | wc -l | tr
 KNOWLEDGE_COUNT=$(find "$KNOWLEDGE_DIR" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
 
 log "Trajectory: $(echo "$TRAJECTORY_STATS" | head -1)"
-log "Reflections: $REFLECTION_COUNT files"
-log "Knowledge: $KNOWLEDGE_COUNT files"
+log "Reflections: $REFLECTION_COUNT dosya"
+log "Knowledge: $KNOWLEDGE_COUNT dosya"
 
-# === Generate Prediction ===
-step "PREDICTION — $MODE"
+# === GENERATE PREDICTION ===
+step "TAHMIN URETIMI — $MODE"
 
-PREDICTION_PROMPT="You are a Predictive Engine for an AI agent system. Analyze past data and produce actionable predictions.
+PREDICTION_PROMPT="Sen Oracle'in Predictive Engine'isin. Gecmis verileri analiz edip gelecek tahmini yapiyorsun.
 
-MODE: $MODE
-$([ -n "$TASK_TYPE" ] && echo "TASK TYPE: $TASK_TYPE")
+MOD: $MODE
+$([ -n "$TASK_TYPE" ] && echo "GOREV TIPI: $TASK_TYPE")
 
-AVAILABLE DATA:
+MEVCUT VERILER:
 $TRAJECTORY_STATS
 
-Reflection count: $REFLECTION_COUNT
-Knowledge base size: $KNOWLEDGE_COUNT files
+Reflection sayisi: $REFLECTION_COUNT
+Knowledge base boyutu: $KNOWLEDGE_COUNT dosya
 
-TASK ($MODE):"
-
-case $MODE in
+GOREV ($MODE):
+$(case $MODE in
     weekly)
-        PREDICTION_PROMPT+="
-Generate a weekly prediction report:
-1. Which task types will succeed next week? - confidence percentage
-2. Which agents are at risk? - low success rates
-3. Token consumption trend - increasing/decreasing forecast
-4. Top 3 improvement opportunities
-5. Proactive recommendations for the operator";;
+        echo "Haftalik tahmin raporu hazirla:
+1. Gelecek hafta hangi gorev tipleri basarili olacak? (confidence %)
+2. Hangi agent'lar risk altinda? (basari orani dusuk olanlar)
+3. Token tuketimi trendi (artis/azalis tahmini)
+4. En onemli 3 iyilestirme firsati
+5. Proaktif oneriler (User'a sunulacak)";;
     task)
-        PREDICTION_PROMPT+="
-Predict outcome for task type: $TASK_TYPE
-1. Success probability and confidence level
-2. Expected duration and token consumption
-3. Potential risks
-4. Recommended strategy
-5. Best model selection";;
+        echo "Bu gorev tipi icin tahmin yap: $TASK_TYPE
+1. Basari olasiligi (%) ve guvenirligi
+2. Beklenen sure ve token tuketimi
+3. Potansiyel riskler
+4. Onerilen strateji
+5. En iyi model secimi";;
     risk)
-        PREDICTION_PROMPT+="
-Risk analysis:
-1. Top 3 highest risk areas - agent/task/system
-2. Probability and impact assessment for each
-3. Preventive measures
-4. Items requiring immediate attention
-5. Overall system health assessment";;
+        echo "Risk analizi yap:
+1. En yuksek riskli 3 alan (agent/gorev/sistem)
+2. Her risk icin olasilik ve etki degerlendirmesi
+3. Onleyici tedbirler
+4. Acil mudahale gerektiren durumlar
+5. Sistem sagligi genel degerlendirmesi";;
     opportunity)
-        PREDICTION_PROMPT+="
-Opportunity analysis:
-1. Underexploited capabilities in current data
-2. New tool suggestions - what tools should be built?
-3. New automation opportunities
-4. Strategic improvement areas
-5. Self-improvement opportunities for the system";;
-esac
+        echo "Firsat analizi yap:
+1. Mevcut verilerdeki gorunmeyen firsatlar
+2. Yeni tool onerisi (hangi araclari uretmeliyiz?)
+3. Yeni otomasyon firsatlari (hangi isler otomatiklestirilebilir?)
+4. User'un kariyeri icin stratejik firsatlar
+5. Oracle'in kendini gelistirmesi icin firsatlar";;
+esac)
 
-PREDICTION_PROMPT+="
+FORMAT: Markdown, kisa ve somut"
 
-FORMAT: Markdown, concise and actionable"
+PREDICTION=$(bash "$BRIDGE" --analyze --text --silent "$PREDICTION_PROMPT" 2>/dev/null) || {
+    log "Tahmin uretimi icin yeterli veri yok"
+    PREDICTION="# Tahmin Raporu - $(date +%Y-%m-%d)
 
-# Try LLM bridge, fall back to heuristic
-if [[ -x "$BRIDGE" ]]; then
-    PREDICTION=$(bash "$BRIDGE" --analyze --text --silent "$PREDICTION_PROMPT" 2>/dev/null) || {
-        log "LLM bridge unavailable, generating heuristic report"
-        PREDICTION=""
-    }
+Trajectory pool'da yeterli veri yok. Sistem yeni kuruldu.
+Veri birikimi icin en az 1 hafta bekle.
+
+## Ilk Oneriler
+- Agent'lari aktif kullanmaya basla
+- Gorevleri trajectory pool'a kaydetmeyi unutma
+- Ilk haftalik cycle'i Pazar gunu calistir"
 fi
 
-# Fallback: heuristic report
-if [[ -z "${PREDICTION:-}" ]]; then
-    PREDICTION="# Prediction Report - $(date +%Y-%m-%d) ($MODE)
-
-## Data Summary
-$TRAJECTORY_STATS
-
-## Heuristic Analysis
-- Reflections available: $REFLECTION_COUNT
-- Knowledge files: $KNOWLEDGE_COUNT
-- Mode: $MODE
-
-## Recommendations
-- Ensure trajectory pool is populated with task results
-- Run tasks through the metrics system for better data
-- Use bridge.sh with an LLM for deeper analysis
-- Review failed trajectories for improvement patterns
-
-*Note: This is a heuristic report. Connect bridge.sh to an LLM CLI for AI-powered predictions.*"
-fi
-
-# === Save ===
+# === SAVE ===
 PREDICT_FILE="$PREDICT_DIR/$(date +%Y-%m-%d)-${MODE}.md"
 echo "$PREDICTION" > "$PREDICT_FILE"
-log "Prediction saved: $PREDICT_FILE"
 
-# === Output ===
+log "Tahmin kaydedildi: $PREDICT_FILE"
+
+# === OUTPUT ===
 echo ""
 echo "$PREDICTION"
