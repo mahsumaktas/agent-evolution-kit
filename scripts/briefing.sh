@@ -21,7 +21,7 @@ BRIEFING_DIR="$MEMORY_DIR/briefings"
 GOALS_FILE="$MEMORY_DIR/goals/active-goals.json"
 METRICS_DB="$MEMORY_DIR/metrics.db"
 BRIDGE_SCRIPT="$AEK_HOME/scripts/bridge.sh"
-LOG="/tmp/aek-briefing.log"
+LOG="$AEK_HOME/memory/logs/briefing.log"
 
 TODAY=$(date '+%Y-%m-%d')
 NOW=$(date '+%H:%M')
@@ -34,6 +34,7 @@ log() {
 ensure_dirs() {
     mkdir -p "$BRIEFING_DIR"
     mkdir -p "$MEMORY_DIR/goals"
+    mkdir -p "$AEK_HOME/memory/logs"
 }
 
 hr() {
@@ -371,7 +372,9 @@ compose_evening() {
 
 compose_custom() {
     local topic="${1:?Topic is required}"
-    local output="$BRIEFING_DIR/${TODAY}-custom-$(echo "$topic" | tr ' ' '-' | tr '[:upper:]' '[:lower:]').md"
+    local safe_topic
+    safe_topic=$(echo "$topic" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | head -c50)
+    local output="$BRIEFING_DIR/${TODAY}-custom-${safe_topic}.md"
 
     {
         echo "# Custom Briefing: $topic"

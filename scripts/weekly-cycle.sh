@@ -116,7 +116,7 @@ else
     [[ $local_cleaned -gt 0 ]] && log "Cleaned $local_cleaned old briefings"
 
     # Trim watchdog log
-    local watchdog_log="/tmp/aek-watchdog.log"
+    local watchdog_log="$AEK_HOME/memory/logs/watchdog.log"
     if [[ -f "$watchdog_log" ]]; then
         local wl_lines
         wl_lines=$(wc -l < "$watchdog_log" | tr -d ' ')

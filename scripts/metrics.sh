@@ -19,7 +19,7 @@ set -euo pipefail
 AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
 DB_DIR="$AEK_HOME/memory"
 DB="$DB_DIR/metrics.db"
-LOG="/tmp/aek-metrics.log"
+LOG="$AEK_HOME/memory/logs/metrics.log"
 COST_LOG="$AEK_HOME/memory/cost-log.jsonl"
 
 # === Logging ===
@@ -30,6 +30,7 @@ log() {
 # === Database Initialization ===
 ensure_db() {
     mkdir -p "$DB_DIR"
+    mkdir -p "$AEK_HOME/memory/logs"
     if [[ ! -f "$DB" ]]; then
         log "Creating new metrics database: $DB"
         init_db
@@ -77,7 +78,8 @@ calc_cost() {
     local tokens_in="${2:-0}"
     local tokens_out="${3:-0}"
 
-    python3 -c "
+    python3 - "$model" "$tokens_in" "$tokens_out" 2>/dev/null <<'PYEOF' || echo "0.000000"
+import sys
 # Pricing per 1M tokens: (input, output)
 PRICING = {
     'opus':       (15.00, 75.00),
@@ -91,13 +93,13 @@ PRICING = {
     'deepseek':   (0.27,  1.10),
     'unknown':    (0.00,  0.00),
 }
-model = '$model'
-t_in = $tokens_in
-t_out = $tokens_out
+model = sys.argv[1]
+t_in = int(sys.argv[2])
+t_out = int(sys.argv[3])
 in_p, out_p = PRICING.get(model, (0.0, 0.0))
 cost = (t_in / 1_000_000) * in_p + (t_out / 1_000_000) * out_p
 print(f'{cost:.6f}')
-" 2>/dev/null || echo "0.000000"
+PYEOF
 }
 
 # === Import cost-log.jsonl into task_log ===
@@ -159,7 +161,14 @@ cmd_record() {
     local tags="${4:-}"
 
     ensure_db
-    sqlite3 "$DB" "INSERT INTO metrics (agent, metric, value, tags) VALUES ('$agent', '$metric', $value, '$tags');"
+    python3 - "$DB" "$agent" "$metric" "$value" "$tags" <<'PYEOF'
+import sqlite3, sys
+db, agent, metric, value, tags = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4]), sys.argv[5]
+conn = sqlite3.connect(db)
+conn.execute("INSERT INTO metrics (agent, metric, value, tags) VALUES (?, ?, ?, ?)", (agent, metric, value, tags))
+conn.commit()
+conn.close()
+PYEOF
     log "RECORD: agent=$agent metric=$metric value=$value tags=$tags"
     echo "Recorded: $agent/$metric = $value"
 }
@@ -179,7 +188,20 @@ cmd_task() {
     local cost
     cost=$(calc_cost "$model" "$tokens_in" "$tokens_out")
 
-    sqlite3 "$DB" "INSERT INTO task_log (agent, task_type, status, duration_ms, tokens_input, tokens_output, model, cost_estimate, error) VALUES ('$agent', '$task_type', '$status', $duration_ms, $tokens_in, $tokens_out, '$model', $cost, '$error');"
+    python3 - "$DB" "$agent" "$task_type" "$status" "$duration_ms" "$tokens_in" "$tokens_out" "$model" "$cost" "$error" <<'PYEOF'
+import sqlite3, sys
+db = sys.argv[1]
+agent, task_type, status = sys.argv[2], sys.argv[3], sys.argv[4]
+duration_ms, tokens_in, tokens_out = int(sys.argv[5]), int(sys.argv[6]), int(sys.argv[7])
+model, cost, error = sys.argv[8], float(sys.argv[9]), sys.argv[10]
+conn = sqlite3.connect(db)
+conn.execute(
+    "INSERT INTO task_log (agent, task_type, status, duration_ms, tokens_input, tokens_output, model, cost_estimate, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    (agent, task_type, status, duration_ms, tokens_in, tokens_out, model, cost, error)
+)
+conn.commit()
+conn.close()
+PYEOF
     log "TASK: agent=$agent type=$task_type status=$status model=$model cost=$cost"
     echo "Task recorded: $agent/$task_type [$status] cost=\$$cost"
 }
@@ -357,6 +379,8 @@ cmd_weekly() {
 
 cmd_agent() {
     local name="${1:?Agent name required}"
+    # Sanitize agent name for SQL safety (whitelist: alphanumeric, hyphen, underscore)
+    name=$(echo "$name" | sed 's/[^a-zA-Z0-9_-]//g')
     ensure_db
     import_cost_log 2>/dev/null || true
 
@@ -425,6 +449,11 @@ cmd_agent() {
 
 cmd_cost() {
     local days="${1:-7}"
+    # Validate days is numeric
+    if ! [[ "$days" =~ ^[0-9]+$ ]]; then
+        echo "Error: days must be a number"
+        exit 1
+    fi
     ensure_db
     import_cost_log 2>/dev/null || true
 
@@ -485,7 +514,7 @@ cmd_cost() {
         GROUP BY date(ts) ORDER BY date(ts) DESC;
     " 2>/dev/null | while IFS='|' read -r dt cnt cost; do
         local bar_len
-        bar_len=$(python3 -c "print(int(min(float('${cost:-0}') * 100, 50)))" 2>/dev/null || echo "0")
+        bar_len=$(python3 -c "import sys; print(int(min(float(sys.argv[1]) * 100, 50)))" "${cost:-0}" 2>/dev/null || echo "0")
         local bar=""
         for ((i=0; i<bar_len; i++)); do bar+="#"; done
         printf "  %s  %4s calls  \$%8s  %s\n" "$dt" "$cnt" "$cost" "$bar"

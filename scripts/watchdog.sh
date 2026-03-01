@@ -28,8 +28,9 @@ set -euo pipefail
 # === Configuration ===
 AEK_HOME="${AEK_HOME:-$HOME/agent-evolution-kit}"
 
-readonly STATE_FILE="/tmp/aek-watchdog-state.json"
-readonly LOG_FILE="/tmp/aek-watchdog.log"
+readonly STATE_DIR="$AEK_HOME/memory/logs"
+readonly STATE_FILE="$STATE_DIR/watchdog-state.json"
+readonly LOG_FILE="$STATE_DIR/watchdog.log"
 
 # Configurable parameters (override via env vars)
 PROCESS_NAME="${WATCHDOG_PROCESS_NAME:-my-agent}"
@@ -74,37 +75,42 @@ trim_log() {
 save_metric() {
     local metric="$1" value="$2" tags="${3:-}"
     if [[ -f "$METRICS_DB" ]]; then
-        sqlite3 "$METRICS_DB" \
-            "INSERT OR IGNORE INTO metrics (agent,metric,value,tags,timestamp) VALUES ('watchdog','$metric',$value,'$tags',datetime('now'));" 2>/dev/null || true
+        python3 - "$METRICS_DB" "$metric" "$value" "$tags" <<'PYEOF'
+import sqlite3, sys
+db, metric, value, tags = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
+try:
+    conn = sqlite3.connect(db)
+    conn.execute("INSERT OR IGNORE INTO metrics (agent,metric,value,tags,timestamp) VALUES ('watchdog',?,?,?,datetime('now'))", (metric, value, tags))
+    conn.commit()
+    conn.close()
+except: pass
+PYEOF
     fi
 }
 
 # === State management ===
 load_state() {
     if [[ -f "$STATE_FILE" ]]; then
-        FAIL_COUNT="$(python3 -c "
-import json
+        local state_data
+        state_data="$(python3 - "$STATE_FILE" <<'PYEOF'
+import json, sys
 try:
-    s = json.load(open('${STATE_FILE}'))
+    with open(sys.argv[1]) as f:
+        s = json.load(f)
     print(s.get('fail_count', 0))
-except: print(0)
-" 2>/dev/null || echo 0)"
-
-        LAST_ALERT_TS="$(python3 -c "
-import json
-try:
-    s = json.load(open('${STATE_FILE}'))
     print(s.get('last_alert_ts', 0))
-except: print(0)
-" 2>/dev/null || echo 0)"
-
-        LAST_STATUS="$(python3 -c "
-import json
-try:
-    s = json.load(open('${STATE_FILE}'))
     print(s.get('last_status', 'unknown'))
-except: print('unknown')
-" 2>/dev/null || echo "unknown")"
+except:
+    print(0)
+    print(0)
+    print('unknown')
+PYEOF
+)" || true
+        if [[ -n "$state_data" ]]; then
+            FAIL_COUNT="$(echo "$state_data" | sed -n '1p')"
+            LAST_ALERT_TS="$(echo "$state_data" | sed -n '2p')"
+            LAST_STATUS="$(echo "$state_data" | sed -n '3p')"
+        fi
     fi
 }
 
@@ -112,19 +118,22 @@ save_state() {
     local status="$1"
     local now
     now="$(date +%s)"
+    local human_ts
+    human_ts="$(date '+%Y-%m-%d %H:%M:%S')"
 
-    python3 -c "
-import json
+    python3 - "$STATE_FILE" "$FAIL_COUNT" "$LAST_ALERT_TS" "$now" "$status" "$human_ts" <<'PYEOF'
+import json, sys
 state = {
-    'fail_count': ${FAIL_COUNT},
-    'last_alert_ts': ${LAST_ALERT_TS},
-    'last_check_ts': ${now},
-    'last_status': '${status}',
-    'last_check_human': '$(date '+%Y-%m-%d %H:%M:%S')'
+    'fail_count': int(sys.argv[2]),
+    'last_alert_ts': int(sys.argv[3]),
+    'last_check_ts': int(sys.argv[4]),
+    'last_status': sys.argv[5],
+    'last_check_human': sys.argv[6]
 }
-with open('${STATE_FILE}', 'w') as f:
+with open(sys.argv[1], 'w') as f:
     json.dump(state, f, indent=2)
-" 2>/dev/null || log "WARN" "Failed to save state"
+PYEOF
+    [[ $? -ne 0 ]] && log "WARN" "Failed to save state"
 }
 
 # === Webhook notification ===
@@ -148,17 +157,13 @@ send_alert() {
     fi
 
     local payload
-    payload=$(cat <<JSONEOF
-{
-  "embeds": [{
-    "title": "Watchdog Alert",
-    "description": "${message}",
-    "color": ${color},
-    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-    "footer": {"text": "${SCRIPT_NAME} | L4 escalation"}
-  }]
-}
-JSONEOF
+    payload=$(python3 - "$message" "$color" "$SCRIPT_NAME" <<'PYEOF'
+import json, sys
+from datetime import datetime, timezone
+msg, color, script = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+data = {"embeds": [{"title": "Watchdog Alert", "description": msg, "color": color, "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "footer": {"text": f"{script} | L4 escalation"}}]}
+print(json.dumps(data))
+PYEOF
 )
 
     if curl -s -o /dev/null -w "%{http_code}" \
@@ -478,6 +483,8 @@ EOF
 # ============================================================
 main() {
     [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && show_help
+
+    mkdir -p "$STATE_DIR"
 
     trim_log
     log "INFO" "Watchdog check started (process=$PROCESS_NAME port=$WATCH_PORT)"

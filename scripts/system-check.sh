@@ -121,10 +121,10 @@ evolution_check() {
     # Trajectory pool
     local traj_count="0"
     if [[ -f "$AEK_HOME/memory/trajectory-pool.json" ]]; then
-        traj_count=$(python3 -c "
-import json
+        traj_count=$(python3 - "$AEK_HOME/memory/trajectory-pool.json" <<'PYEOF'
+import json, sys
 try:
-    with open('$AEK_HOME/memory/trajectory-pool.json') as f:
+    with open(sys.argv[1]) as f:
         pool = json.load(f)
     if isinstance(pool, list):
         print(len(pool))
@@ -132,7 +132,8 @@ try:
         print(len(pool.get('entries', pool.get('trajectories', []))))
 except:
     print(0)
-" 2>/dev/null || echo "0")
+PYEOF
+)
     fi
     echo "  Trajectory pool: $traj_count entries"
 
@@ -154,7 +155,15 @@ except:
     # Goals
     if [[ -f "$AEK_HOME/memory/goals/active-goals.json" ]]; then
         local goal_count
-        goal_count=$(python3 -c "import json; print(len(json.load(open('$AEK_HOME/memory/goals/active-goals.json')).get('goals',[])))" 2>/dev/null || echo "?")
+        goal_count=$(python3 - "$AEK_HOME/memory/goals/active-goals.json" <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        print(len(json.load(f).get('goals', [])))
+except:
+    print('?')
+PYEOF
+)
         echo "  Active goals: $goal_count"
     else
         echo "  Active goals: none (no goals file)"

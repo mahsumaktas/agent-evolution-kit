@@ -34,7 +34,7 @@ MAX_TURNS=25
 BUDGET="1.00"
 OUTPUT_FORMAT="json"
 TIMEOUT=300
-EXTRA_DIRS=""
+EXTRA_DIR_ARGS=()
 SYSTEM_PROMPT=""
 JSON_SCHEMA=""
 PERMISSION_MODE="dangerously-skip-permissions"
@@ -102,7 +102,7 @@ while [[ $# -gt 0 ]]; do
         --budget)        BUDGET="$2"; shift 2;;
         --timeout)       TIMEOUT="$2"; shift 2;;
         --output)        OUTPUT_FORMAT="$2"; shift 2;;
-        --add-dir)       EXTRA_DIRS="$EXTRA_DIRS --add-dir $2"; shift 2;;
+        --add-dir)       EXTRA_DIR_ARGS+=(--add-dir "$2"); shift 2;;
         --system-prompt) SYSTEM_PROMPT="$2"; shift 2;;
         --json-schema)   JSON_SCHEMA="$2"; shift 2;;
         --persist)       SESSION_PERSIST=""; shift;;
@@ -145,7 +145,7 @@ CMD=(env -u CLAUDECODE "$CLI_BIN" -p "$PROMPT"
 [[ -n "$SESSION_PERSIST" ]] && CMD+=($SESSION_PERSIST)
 [[ -n "$SYSTEM_PROMPT" ]] && CMD+=(--system-prompt "$SYSTEM_PROMPT")
 [[ -n "$JSON_SCHEMA" ]] && CMD+=(--json-schema "$JSON_SCHEMA")
-[[ -n "$EXTRA_DIRS" ]] && eval "CMD+=($EXTRA_DIRS)"
+[[ ${#EXTRA_DIR_ARGS[@]} -gt 0 ]] && CMD+=("${EXTRA_DIR_ARGS[@]}")
 
 # === Dry Run ===
 if $DRY_RUN; then
@@ -181,9 +181,15 @@ RESULT=$(_run_with_timeout "$TIMEOUT" "${CMD[@]}" 2>/dev/null) || {
         err "CLI exited with code: $EXIT_CODE"
     fi
     # Log failure
-    echo "{\"timestamp\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"status\":\"FAILED\",\"exit_code\":$EXIT_CODE,\"prompt\":\"$(echo "$PROMPT" | head -c200)\"}" > "$LOG_FILE"
+    python3 - "$TIMESTAMP" "$MODEL" "$EXIT_CODE" "$PROMPT" "$LOG_FILE" <<'PYEOF'
+import json, sys
+ts, model, exit_code, prompt, log_file = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
+data = {"timestamp": ts, "model": model, "status": "FAILED", "exit_code": exit_code, "prompt": prompt[:200]}
+with open(log_file, "w") as f:
+    json.dump(data, f, indent=2)
+PYEOF
     # Cost log (failure)
-    echo "{\"ts\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"duration\":0,\"cost\":\"0\",\"turns\":\"0\",\"status\":\"FAILED\",\"caller\":\"${BRIDGE_CALLER:-manual}\"}" >> "$COST_LOG"
+    python3 -c "import json,sys; json.dump({'ts':sys.argv[1],'model':sys.argv[2],'duration':0,'cost':'0','turns':'0','status':'FAILED','caller':sys.argv[3]}, sys.stdout); print()" "$TIMESTAMP" "$MODEL" "${BRIDGE_CALLER:-manual}" >> "$COST_LOG"
     exit $EXIT_CODE
 }
 
@@ -203,25 +209,31 @@ if [[ "$OUTPUT_FORMAT" == "json" ]]; then
     $SILENT || log "Completed: ${DURATION}s | Cost: \$${COST} | Turns: $TURNS"
 
     # Save full log
-    echo "$RESULT" | python3 -c "
+    echo "$RESULT" | python3 - "$TIMESTAMP" "$DURATION" "$PROMPT" "$LOG_FILE" <<'PYEOF'
 import sys, json
 data = json.load(sys.stdin)
 data['_bridge_meta'] = {
-    'timestamp': '$TIMESTAMP',
-    'duration_s': $DURATION,
-    'prompt_preview': '''$(echo "$PROMPT" | head -c200)''',
+    'timestamp': sys.argv[1],
+    'duration_s': int(sys.argv[2]),
+    'prompt_preview': sys.argv[3][:200],
     'preset': 'custom'
 }
-json.dump(data, sys.stdout, indent=2)
-" > "$LOG_FILE" 2>/dev/null || true
+with open(sys.argv[4], 'w') as f:
+    json.dump(data, f, indent=2)
+PYEOF
+    2>/dev/null || true
 else
     $SILENT || log "Completed: ${DURATION}s"
-    echo "{\"timestamp\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"duration_s\":$DURATION,\"status\":\"SUCCESS\",\"prompt\":\"$(echo "$PROMPT" | head -c200)\"}" > "$LOG_FILE"
+    python3 - "$TIMESTAMP" "$MODEL" "$DURATION" "$PROMPT" "$LOG_FILE" <<'PYEOF'
+import json, sys
+data = {"timestamp": sys.argv[1], "model": sys.argv[2], "duration_s": int(sys.argv[3]), "status": "SUCCESS", "prompt": sys.argv[4][:200]}
+with open(sys.argv[5], "w") as f:
+    json.dump(data, f, indent=2)
+PYEOF
 fi
 
 # === Cost Log (append-only JSONL) ===
-COST_ENTRY="{\"ts\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"duration\":$DURATION,\"cost\":\"${COST:-0}\",\"turns\":\"${TURNS:-1}\",\"status\":\"SUCCESS\",\"caller\":\"${BRIDGE_CALLER:-manual}\"}"
-echo "$COST_ENTRY" >> "$COST_LOG"
+python3 -c "import json,sys; json.dump({'ts':sys.argv[1],'model':sys.argv[2],'duration':int(sys.argv[3]),'cost':sys.argv[4],'turns':sys.argv[5],'status':'SUCCESS','caller':sys.argv[6]}, sys.stdout); print()" "$TIMESTAMP" "$MODEL" "$DURATION" "${COST:-0}" "${TURNS:-1}" "${BRIDGE_CALLER:-manual}" >> "$COST_LOG"
 
 # === Trajectory Pool (append entry for self-evolution tracking) ===
 python3 - "$TRAJECTORY_FILE" "$TIMESTAMP" "$MODEL" "$DURATION" "${COST:-0}" "${TURNS:-1}" "${BRIDGE_CALLER:-manual}" "$(echo "$PROMPT" | head -c200)" <<'PYEOF'

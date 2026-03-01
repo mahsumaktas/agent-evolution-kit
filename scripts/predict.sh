@@ -54,12 +54,12 @@ mkdir -p "$PREDICT_DIR"
 # === Gather Data ===
 step "DATA COLLECTION"
 
-TRAJECTORY_STATS=$(python3 -c "
-import json, os
+TRAJECTORY_STATS=$(python3 - "$TRAJECTORY" <<'PYEOF'
+import json, os, sys
 from collections import Counter, defaultdict
 
 try:
-    with open('$TRAJECTORY') as f:
+    with open(sys.argv[1]) as f:
         pool = json.load(f)
     if isinstance(pool, list):
         entries = pool
@@ -109,7 +109,8 @@ print('TASK_TYPE_STATS:')
 for tt, stats in sorted(type_stats.items()):
     rate = stats['success']/stats['total']*100 if stats['total'] > 0 else 0
     print(f'  {tt}: {rate:.0f}% success ({stats[\"total\"]} tasks)')
-" 2>/dev/null) || TRAJECTORY_STATS="TRAJECTORY_EMPTY=true"
+PYEOF
+) || TRAJECTORY_STATS="TRAJECTORY_EMPTY=true"
 
 # Reflection count
 REFLECTION_COUNT=$(find "$REFLECTIONS_DIR" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
@@ -135,37 +136,44 @@ $TRAJECTORY_STATS
 Reflection count: $REFLECTION_COUNT
 Knowledge base size: $KNOWLEDGE_COUNT files
 
-TASK ($MODE):
-$(case $MODE in
+TASK ($MODE):"
+
+case $MODE in
     weekly)
-        echo "Generate a weekly prediction report:
-1. Which task types will succeed next week? (confidence %)
-2. Which agents are at risk? (low success rates)
-3. Token consumption trend (increasing/decreasing forecast)
+        PREDICTION_PROMPT+="
+Generate a weekly prediction report:
+1. Which task types will succeed next week? - confidence percentage
+2. Which agents are at risk? - low success rates
+3. Token consumption trend - increasing/decreasing forecast
 4. Top 3 improvement opportunities
 5. Proactive recommendations for the operator";;
     task)
-        echo "Predict outcome for task type: $TASK_TYPE
-1. Success probability (%) and confidence level
+        PREDICTION_PROMPT+="
+Predict outcome for task type: $TASK_TYPE
+1. Success probability and confidence level
 2. Expected duration and token consumption
 3. Potential risks
 4. Recommended strategy
 5. Best model selection";;
     risk)
-        echo "Risk analysis:
-1. Top 3 highest risk areas (agent/task/system)
+        PREDICTION_PROMPT+="
+Risk analysis:
+1. Top 3 highest risk areas - agent/task/system
 2. Probability and impact assessment for each
 3. Preventive measures
 4. Items requiring immediate attention
 5. Overall system health assessment";;
     opportunity)
-        echo "Opportunity analysis:
+        PREDICTION_PROMPT+="
+Opportunity analysis:
 1. Underexploited capabilities in current data
-2. New tool suggestions (what tools should be built?)
+2. New tool suggestions - what tools should be built?
 3. New automation opportunities
 4. Strategic improvement areas
 5. Self-improvement opportunities for the system";;
-esac)
+esac
+
+PREDICTION_PROMPT+="
 
 FORMAT: Markdown, concise and actionable"
 

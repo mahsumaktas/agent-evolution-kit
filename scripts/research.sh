@@ -56,12 +56,12 @@ if [[ "$MODE" == "auto" ]]; then
     step "AUTO TOPIC SELECTION"
     log "Analyzing trajectory pool and reflections..."
 
-    TOPIC=$(python3 -c "
-import json, os, glob
+    TOPIC=$(python3 - "$TRAJECTORY" "$REFLECTIONS_DIR" <<'PYEOF'
+import json, os, glob, sys
 
 # Analyze trajectory pool for weak areas
 try:
-    with open('$TRAJECTORY') as f:
+    with open(sys.argv[1]) as f:
         pool = json.load(f)
     if isinstance(pool, list):
         entries = pool
@@ -77,14 +77,15 @@ try:
         print(f'Most failed task type: {worst} -- research improvement methods')
     else:
         # Check reflections
-        reflections = glob.glob('$REFLECTIONS_DIR/*/*.md') + glob.glob('$REFLECTIONS_DIR/*.md')
+        reflections = glob.glob(sys.argv[2] + '/*/*.md') + glob.glob(sys.argv[2] + '/*.md')
         if reflections:
             print('Agent reflection analysis -- recurring issues and solutions')
         else:
             print('AI agent self-improvement techniques and autonomous tool generation')
 except:
     print('AI agent self-improvement techniques and autonomous tool generation')
-" 2>/dev/null)
+PYEOF
+)
 
     log "Selected topic: $TOPIC"
 fi
@@ -95,12 +96,12 @@ fi
 
 if [[ "$MODE" == "gap" ]]; then
     step "KNOWLEDGE GAP ANALYSIS"
-    TOPIC=$(python3 -c "
-import os, glob
+    TOPIC=$(python3 - "$KNOWLEDGE_DIR" <<'PYEOF'
+import os, glob, sys
 
 # Check what knowledge exists
 existing = set()
-for f in glob.glob('$KNOWLEDGE_DIR/*.md'):
+for f in glob.glob(sys.argv[1] + '/*.md'):
     existing.add(os.path.basename(f).replace('.md',''))
 
 # Expected knowledge areas for an agent system
@@ -113,10 +114,11 @@ expected = [
 
 missing = [e for e in expected if not any(e in x for x in existing)]
 if missing:
-    print(f'Knowledge gaps: {\", \".join(missing[:3])} -- research these areas')
+    print(f'Knowledge gaps: {", ".join(missing[:3])} -- research these areas')
 else:
     print('Update and deepen existing knowledge areas')
-" 2>/dev/null)
+PYEOF
+)
 
     log "Gap analysis result: $TOPIC"
 fi

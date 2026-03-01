@@ -508,7 +508,15 @@ cmd_report() {
 
     # Composition count
     local comp_count
-    comp_count=$(python3 -c "import json; print(len(json.load(open('$COMPOSITIONS_FILE')).get('compositions',[])))" 2>/dev/null || echo "0")
+    comp_count=$(python3 - "$COMPOSITIONS_FILE" <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        print(len(json.load(f).get('compositions', [])))
+except:
+    print(0)
+PYEOF
+)
     echo "  Composite skills: $comp_count"
 
     echo ""
