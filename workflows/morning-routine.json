@@ -1,0 +1,34 @@
+{
+  "name": "morning-routine",
+  "description": "Sabah rutin: system check → briefing → agent health → blackboard update",
+  "steps": [
+    {
+      "id": "system-check",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/system-check.sh --quick 2>&1 | tail -5",
+      "depends": []
+    },
+    {
+      "id": "morning-briefing",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/briefing.sh morning 2>&1 | tail -3",
+      "depends": ["system-check"]
+    },
+    {
+      "id": "agent-health",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/agent-health.sh 2>&1 | tail -5",
+      "depends": ["system-check"]
+    },
+    {
+      "id": "blackboard-update",
+      "agent": "oracle",
+      "action": "blackboard-set",
+      "payload": "morning:last_run=$(date +%s)",
+      "depends": ["morning-briefing", "agent-health"]
+    }
+  ]
+}

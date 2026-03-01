@@ -1,0 +1,34 @@
+{
+  "name": "weekly-evolution",
+  "description": "Haftalik evrim dongusu: research → predict → metrics snapshot",
+  "steps": [
+    {
+      "id": "system-check",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/system-check.sh --full 2>&1 | tail -10",
+      "depends": []
+    },
+    {
+      "id": "cron-audit",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/cron-audit.sh 2>&1 | tail -5",
+      "depends": ["system-check"]
+    },
+    {
+      "id": "metrics-snapshot",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/metrics.sh dashboard 2>&1 | tail -10",
+      "depends": ["system-check"]
+    },
+    {
+      "id": "blackboard-update",
+      "agent": "oracle",
+      "action": "blackboard-set",
+      "payload": "weekly:last_evolution=$(date +%s)",
+      "depends": ["cron-audit", "metrics-snapshot"]
+    }
+  ]
+}

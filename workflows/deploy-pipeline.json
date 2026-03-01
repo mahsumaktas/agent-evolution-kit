@@ -1,0 +1,34 @@
+{
+  "name": "deploy-pipeline",
+  "description": "Deploy pipeline: sandbox L1 → L2 → canary → verify",
+  "steps": [
+    {
+      "id": "sandbox-l1",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/sandbox.sh --l1 2>&1 | tail -5",
+      "depends": []
+    },
+    {
+      "id": "sandbox-l2",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/sandbox.sh --l2 2>&1 | tail -5",
+      "depends": ["sandbox-l1"]
+    },
+    {
+      "id": "canary-deploy",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/canary-deploy.sh --canary 2>&1 | tail -5",
+      "depends": ["sandbox-l2"]
+    },
+    {
+      "id": "verify",
+      "agent": "oracle",
+      "action": "exec",
+      "payload": "bash $HOME/clawd/scripts/system-check.sh --gateway 2>&1 | tail -5",
+      "depends": ["canary-deploy"]
+    }
+  ]
+}
