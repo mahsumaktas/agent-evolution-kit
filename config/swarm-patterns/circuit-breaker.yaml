@@ -1,0 +1,8 @@
+name: circuit-breaker
+description: "Wrap execution with circuit breaker, fallback on OPEN"
+agents_min: 1
+flow: guarded
+config:
+  threshold: 3
+  cooldown_seconds: 300
+  fallback: return_cached_or_error

@@ -1,0 +1,51 @@
+# autonomy-levels.example.yaml — Progressive autonomy based on trust score
+#
+# CUSTOMIZE:
+#   - Adjust trust score ranges per level to match your risk tolerance
+#   - Add/remove allowed_actions based on your agent capabilities
+#   - Tune promote/demote thresholds for your environment
+#   - L5 is a placeholder for future full autonomy — keep it disabled until ready
+
+levels:
+  L1_reactive:
+    trust_min: 0
+    trust_max: 499
+    allowed_actions: [read, search, respond_to_human]
+    blocked_actions: [write_code, execute_script, delegate, tool_create, prompt_modify]
+    description: "Human-initiated only, read-only operations"
+
+  L2_scheduled:
+    trust_min: 500
+    trust_max: 599
+    allowed_actions: [read, search, respond_to_human, execute_cron, run_known_scripts]
+    blocked_actions: [write_code, delegate, tool_create, prompt_modify]
+    description: "Can run scheduled tasks and known scripts"
+
+  L3_self_monitoring:
+    trust_min: 600
+    trust_max: 899
+    allowed_actions: [read, search, respond_to_human, execute_cron, run_known_scripts, watchdog_restart, circuit_breaker, alert, self_diagnose]
+    blocked_actions: [prompt_modify, agent_config_change, tool_create]
+    description: "Self-healing, circuit breaker, alerting"
+
+  L4_self_improving:
+    trust_min: 900
+    trust_max: 999
+    allowed_actions: [read, search, respond_to_human, execute_cron, run_known_scripts, watchdog_restart, circuit_breaker, alert, self_diagnose, reflexion, prompt_evolution, trajectory_learning, maker_checker]
+    blocked_actions: [tool_synthesis, governance_change]
+    description: "Self-improvement with operator approval"
+
+  L5_autonomous:
+    trust_min: 1000
+    trust_max: 9999
+    allowed_actions: [all]
+    blocked_actions: [governance_change]
+    description: "Full autonomy (future — not yet active)"
+
+adjustments:
+  promote:
+    consecutive_successes: 10
+    requires_approval: true
+  demote:
+    consecutive_failures: 3
+    automatic: true

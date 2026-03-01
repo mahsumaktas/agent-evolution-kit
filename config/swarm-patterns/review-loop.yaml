@@ -1,0 +1,7 @@
+name: review-loop
+description: "Maker produces, checker reviews, loop until approved"
+agents_min: 2
+flow: maker_checker
+config:
+  max_iterations: 3
+  threshold: 7

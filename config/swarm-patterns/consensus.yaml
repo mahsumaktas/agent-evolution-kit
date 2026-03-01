@@ -1,0 +1,9 @@
+name: consensus
+description: "Multiple agents vote on same question, result by majority/supermajority/unanimous"
+agents_min: 3
+flow: parallel_then_vote
+config:
+  consensus_type: majority
+  timeout_seconds: 300
+  on_no_consensus: escalate_to_orchestrator
+  early_termination: true

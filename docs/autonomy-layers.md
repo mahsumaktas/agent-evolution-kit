@@ -116,3 +116,8 @@ A practical progression timeline:
 5. **Layer 0 is implicit**: Safety constraints (no force push, no secret
    exposure, no unauthorized destructive actions) apply at ALL layers and
    are never autonomously modifiable.
+
+## Implementation
+
+Config: `config/autonomy-levels.example.yaml`
+Enforcement: `scripts/governance.sh` checks before every action

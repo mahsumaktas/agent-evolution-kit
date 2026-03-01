@@ -1,0 +1,7 @@
+name: red-team
+description: "One agent produces, another attacks/challenges, third judges"
+agents_min: 3
+flow: adversarial
+config:
+  roles: [producer, attacker, judge]
+  max_rounds: 2

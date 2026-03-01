@@ -124,3 +124,8 @@ Iteration 2:
 
 Output accepted. Trajectory recorded: 2 iterations, final score 7.
 ```
+
+## Implementation
+
+Script: `scripts/maker-checker.sh`
+Config: `config/maker-checker-pairs.example.yaml`

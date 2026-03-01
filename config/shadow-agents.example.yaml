@@ -1,0 +1,46 @@
+# shadow-agents.example.yaml — Observer agent configuration
+#
+# CUSTOMIZE:
+#   - Replace agent names with your own agent identifiers
+#   - Adjust speak_on triggers based on what you want observed
+#   - Set max_reviews_per_day to control observation budget
+#   - Change storage_dir to your preferred review storage location
+#
+# Modes:
+#   passive  — observe and log only, no intervention
+#   review   — review output after task completion
+#   active   — can intervene during execution (future)
+#
+# Triggers (speak_on):
+#   code_written    — when code changes are produced
+#   security_risk   — when security-related patterns detected
+#   task_complete   — after any task completes
+#   error           — when errors occur
+#   all             — observe everything
+
+shadows:
+  - observer: security-agent
+    target: content-agent
+    speak_on: [code_written, security_risk]
+    mode: passive
+    max_reviews_per_day: 5
+    model: haiku
+
+  - observer: analyst-agent
+    target: researcher-agent
+    speak_on: [task_complete]
+    mode: review
+    max_reviews_per_day: 3
+    model: haiku
+
+  - observer: security-agent
+    target: finance-agent
+    speak_on: [security_risk]
+    mode: review
+    max_reviews_per_day: 3
+    model: haiku
+
+defaults:
+  max_reviews_per_day: 5
+  model: haiku
+  storage_dir: $AEK_HOME/memory/shadow-reviews

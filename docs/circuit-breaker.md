@@ -126,3 +126,9 @@ Each tool or API endpoint maintains its own circuit breaker state in a JSON file
 | `backoff_base` | 1.0 | Base delay in seconds for exponential backoff |
 | `backoff_max` | 30.0 | Maximum backoff delay in seconds |
 | `alert_after_hours` | 24 | Hours in OPEN before operator alert |
+
+## Implementation
+
+Script: `scripts/circuit-breaker.sh`
+State: `memory/circuit-breaker-state.json`
+Integration: Bridge checks before every call.

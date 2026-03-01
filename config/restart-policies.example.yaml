@@ -1,0 +1,26 @@
+# restart-policies.example.yaml — Per-agent supervisor restart configuration
+#
+# CUSTOMIZE:
+#   - Replace "your-main-process" with your actual gateway/main process name
+#   - Adjust max_restarts and cooldown based on your tolerance for downtime
+#   - Choose backoff strategy: "exponential" for critical services, "linear" for others
+#   - permanently_dead_action: "alert_operator" for critical, "log_only" for non-critical
+
+agents:
+  your-main-process:
+    max_restarts: 5
+    max_consecutive_failures: 3
+    cooldown_seconds: 2
+    backoff: exponential
+    max_backoff_seconds: 60
+    stability_reset_seconds: 300
+    permanently_dead_action: alert_operator
+
+  default:
+    max_restarts: 3
+    max_consecutive_failures: 2
+    cooldown_seconds: 5
+    backoff: linear
+    max_backoff_seconds: 30
+    stability_reset_seconds: 300
+    permanently_dead_action: log_only

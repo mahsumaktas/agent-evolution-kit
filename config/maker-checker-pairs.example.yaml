@@ -1,0 +1,29 @@
+# maker-checker-pairs.example.yaml — Agent pairing for dual verification
+#
+# CUSTOMIZE:
+#   - Replace agent names with your own agent identifiers
+#   - Adjust domains to match what each agent pair handles
+#   - Set threshold (1-10) for quality gate — higher = stricter review
+#   - The wildcard (*) pair acts as a catch-all fallback via the orchestrator
+
+pairs:
+  - maker: content-agent
+    checker: analyst-agent
+    domains: [blog, documentation, report, content]
+    threshold: 7
+  - maker: researcher-agent
+    checker: security-agent
+    domains: [code-review, api-design, security-audit]
+    threshold: 8
+  - maker: social-media-agent
+    checker: content-agent
+    domains: [social-media, tweet, thread]
+    threshold: 7
+  - maker: finance-agent
+    checker: security-agent
+    domains: [finance, investment, risk-analysis]
+    threshold: 8
+  - maker: "*"
+    checker: orchestrator
+    domains: ["*"]
+    threshold: 7

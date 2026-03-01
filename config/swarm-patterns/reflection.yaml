@@ -1,0 +1,7 @@
+name: reflection
+description: "Agent output sent back to itself for self-critique and revision"
+agents_min: 1
+flow: loop
+config:
+  max_iterations: 2
+  stop_on: self_approve

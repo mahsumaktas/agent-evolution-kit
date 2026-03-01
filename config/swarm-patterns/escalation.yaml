@@ -1,0 +1,7 @@
+name: escalation
+description: "Start with cheap model, escalate to expensive on failure"
+agents_min: 1
+flow: cascade
+config:
+  model_chain: [haiku, sonnet, opus]
+  escalate_on: [failure, low_confidence, gray_zone_eval]

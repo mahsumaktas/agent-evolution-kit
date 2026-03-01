@@ -1,0 +1,43 @@
+# priority-rules.example.yaml — Task priority classification (P0-P4)
+#
+# CUSTOMIZE:
+#   - Add domain-specific keywords to each level
+#   - Adjust queue limits (max_pending, drop thresholds) for your workload
+#   - Change default_priority if your system leans toward different defaults
+
+levels:
+  P0:
+    name: Critical
+    keywords: [security, data-loss, urgent-production, critical, emergency]
+    never_drop: true
+    description: "Security alerts, data loss risk, operator direct commands"
+  P1:
+    name: High
+    keywords: [bug, fix, broken, regression, production-issue]
+    never_drop: true
+    description: "Production bugs, urgent fixes"
+  P2:
+    name: Normal
+    keywords: []
+    never_drop: false
+    description: "Standard tasks (default)"
+  P3:
+    name: Low
+    keywords: [research, improvement, nice-to-have, exploration]
+    never_drop: false
+    description: "Research, non-urgent improvements"
+  P4:
+    name: Background
+    keywords: [cleanup, optimization, refactor, archive, housekeeping]
+    never_drop: false
+    description: "Cleanup, optimization, nice-to-have"
+
+queue:
+  max_pending: 30
+  drop_p4_at: 20
+  drop_p3_at: 30
+
+assignment:
+  default_priority: P2
+  method: keyword_match
+  case_insensitive: true

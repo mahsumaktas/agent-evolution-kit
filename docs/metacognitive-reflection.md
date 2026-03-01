@@ -119,3 +119,9 @@ Reflection extracted
 - **Output:** Principle reflections feed Prompt Evolution tactical stream
 - **Output:** Procedure reflections feed Record & Replay low-level storage
 - **Trigger:** Orchestrator initiates reflection after qualifying tasks
+
+## Implementation
+
+Trigger: Auto post-failure in `scripts/bridge.sh`
+Principles: `memory/principles/{agent}.md`
+Cost: 2 haiku calls per reflection

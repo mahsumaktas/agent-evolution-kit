@@ -581,7 +581,7 @@ Model Pricing (input/1M tokens):
   gpt-4o=$2.50  o1=$15  deepseek=$0.27
 
 Examples:
-  metrics.sh record scout task_success 1 "nightly-scan"
+  metrics.sh record researcher-agent task_success 1 "nightly-scan"
   metrics.sh task analyst research SUCCESS 12000 500 800 sonnet
   metrics.sh dashboard
   metrics.sh cost 30

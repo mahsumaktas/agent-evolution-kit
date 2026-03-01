@@ -175,3 +175,9 @@ All evaluation results are logged:
 - **Output:** Rejection events trigger Revision (see `trajectory-learning.md`)
 - **Output:** Evaluation scores feed into agent reliability tracking
 - **Output:** Persistent low scores trigger accelerated learning (more frequent reflection)
+
+## Implementation
+
+Script: `scripts/eval.sh`
+Layer 1: Zero-cost heuristic (8 checks)
+Layer 2: LLM via bridge (gray zone only)

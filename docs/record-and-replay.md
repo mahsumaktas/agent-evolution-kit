@@ -161,3 +161,9 @@ Lesson: [lessons field]
 - **Output:** In-context examples injected into agent prompts during task assignment
 - **Output:** Monthly archives for long-term analysis
 - **Related:** Trajectory learning operators use trajectory pool for Refinement analysis
+
+## Implementation
+
+Script: `scripts/replay.sh`
+Storage: `memory/trajectory-pool.json`
+Bridge flag: `--replay`

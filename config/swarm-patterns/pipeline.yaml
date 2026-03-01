@@ -1,0 +1,8 @@
+name: pipeline
+description: "Sequential A->B->C, each step receives previous output"
+agents_min: 2
+flow: sequential
+config:
+  pass_output: true
+  fail_fast: true
+  timeout_per_step: 120

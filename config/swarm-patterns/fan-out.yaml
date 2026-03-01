@@ -1,0 +1,7 @@
+name: fan-out
+description: "Same task sent to N agents in parallel, results merged"
+agents_min: 2
+flow: parallel_then_merge
+config:
+  merge_strategy: concatenate
+  timeout_seconds: 300

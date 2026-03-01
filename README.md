@@ -97,6 +97,9 @@ The **orchestrator** sits at the center and never executes tasks directly. It ro
 | Budget limits per agent | Yes | No | Partial | Partial |
 | Record and replay | Yes (AgentRR) | No | Partial | No |
 | Production-tested (11+ agents) | Yes | Community | Community | Community |
+| Swarm Patterns (24 orchestration templates) | Yes | No | No | No |
+| Consensus Engine (5 voting types) | Yes | No | No | No |
+| Shadow Agent (observer monitoring) | Yes | No | No | No |
 
 No existing framework combines all four: **self-evolution**, **cognitive memory**, **pure orchestration**, and **governance-first design**.
 
@@ -159,6 +162,30 @@ Five graduated levels of agent autonomy, from fully supervised (every action req
 ### Pure Orchestrator Pattern
 The orchestrator never writes code, never calls external APIs directly, and never produces end-user outputs. It only decomposes tasks, delegates to specialist agents, monitors progress, and manages the evolution lifecycle. This separation of concerns prevents the orchestrator from becoming a bottleneck or single point of failure.
 [Read more: `docs/architecture.md`](docs/architecture.md)
+
+### Swarm Patterns
+24 multi-agent orchestration templates covering coordination topologies from simple pipelines to adversarial red-team exercises. Eight patterns are fully implemented with YAML configs and runner support; sixteen additional patterns are documented and ready for implementation.
+[Read more: `docs/swarm-patterns.md`](docs/swarm-patterns.md)
+
+### Consensus Engine
+Five voting types (majority, supermajority, unanimous, weighted, quorum) for multi-agent collective decisions. Supports early termination, tie-breaking strategies, and integration with swarm patterns and cross-agent critique.
+[Read more: `docs/consensus-engine.md`](docs/consensus-engine.md)
+
+### Shadow Agent
+Observer pattern for automated agent monitoring. A shadow agent watches other agents work in one of three modes (passive, review, active) and flags issues based on configurable triggers, with built-in cost controls to keep evaluation cheap.
+[Read more: `docs/shadow-agent.md`](docs/shadow-agent.md)
+
+### Priority Queue
+P0-P4 task prioritization with keyword-based auto-assignment and queue drop policies. Critical tasks are never dropped; low-priority tasks are shed under load. Integrates with goal decomposition and the bridge for priority-aware task routing.
+[Read more: `docs/priority-queue.md`](docs/priority-queue.md)
+
+### Hybrid Evaluation
+Two-layer quality gate: Layer 1 runs zero-cost heuristic checks on every output (8 standard checks plus custom per-agent checks). Layer 2 invokes a cheap LLM evaluation only for flagged or high-importance outputs. Keeps evaluation costs near zero for routine work.
+[Read more: `docs/hybrid-evaluation.md`](docs/hybrid-evaluation.md)
+
+### Autonomy Levels
+Five-level progressive autonomy model from fully supervised (Layer 1) to fully autonomous (Layer 5). Each layer adds capabilities while maintaining safety constraints. Trust scores gate advancement, and any layer can be rolled back.
+[Read more: `docs/autonomy-layers.md`](docs/autonomy-layers.md)
 
 ### Governance Framework
 The overarching system that ties trust scores, circuit breakers, budget limits, maker-checker loops, and audit logging into a coherent operational model. Every agent action is logged, every resource consumption is tracked, and every high-risk operation goes through a defined approval flow.
@@ -334,7 +361,21 @@ agent-evolution-kit/
 │
 ├── config/
 │   ├── governance.example.yaml            # Trust scores, budget limits, thresholds
-│   └── routing-profiles.example.yaml      # Task-to-agent routing configuration
+│   ├── routing-profiles.example.yaml      # Task-to-agent routing configuration
+│   ├── autonomy-levels.example.yaml       # 5-level autonomy configuration
+│   ├── maker-checker-pairs.example.yaml   # Maker-checker agent pairings
+│   ├── priority-rules.example.yaml        # P0-P4 priority queue rules
+│   ├── restart-policies.example.yaml      # Supervisor restart policies
+│   ├── shadow-agents.example.yaml         # Shadow agent monitoring config
+│   └── swarm-patterns/                    # Swarm pattern YAML definitions
+│       ├── consensus.yaml
+│       ├── pipeline.yaml
+│       ├── fan-out.yaml
+│       ├── reflection.yaml
+│       ├── review-loop.yaml
+│       ├── red-team.yaml
+│       ├── escalation.yaml
+│       └── circuit-breaker.yaml
 │
 ├── docs/
 │   ├── architecture.md                    # System architecture and pure orchestrator pattern
@@ -352,6 +393,10 @@ agent-evolution-kit/
 │   ├── maker-checker.md                   # Dual-approval for high-risk actions
 │   ├── capability-routing.md              # Task-to-agent matching algorithm
 │   ├── autonomy-layers.md                 # Five-level autonomy model
+│   ├── swarm-patterns.md                  # 24 multi-agent orchestration templates
+│   ├── consensus-engine.md                # 5-type voting engine
+│   ├── shadow-agent.md                    # Observer pattern for monitoring
+│   ├── priority-queue.md                  # P0-P4 task prioritization
 │   └── academic-references.md             # Paper summaries and citations
 │
 ├── skills/
@@ -380,7 +425,14 @@ agent-evolution-kit/
 │   ├── predict.sh                         # Predictive engine (4 modes)
 │   ├── research.sh                        # Autonomous research engine
 │   ├── system-check.sh                    # System health monitoring
-│   └── weekly-cycle.sh                    # Weekly evolution automation
+│   ├── weekly-cycle.sh                    # Weekly evolution automation
+│   ├── circuit-breaker.sh                 # Circuit breaker state machine
+│   ├── eval.sh                            # Hybrid evaluation (2-layer)
+│   ├── maker-checker.sh                   # Dual-agent verification loop
+│   ├── swarm.sh                           # Swarm pattern runner
+│   ├── replay.sh                          # Record and replay engine
+│   └── helpers/
+│       └── consensus.py                   # Consensus voting engine
 │
 ├── examples/
 │   ├── claude-code-setup/                 # Full Claude Code integration example
