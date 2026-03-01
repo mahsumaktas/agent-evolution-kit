@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evolution Log Entry",
+  "description": "Schema for entries in the evolution log — records of all changes made through the weekly evolution cycle.",
+  "type": "object",
+  "required": [
+    "week",
+    "change",
+    "reason",
+    "expected_impact",
+    "rollback_plan",
+    "status"
+  ],
+  "properties": {
+    "week": {
+      "type": "string",
+      "description": "ISO week identifier",
+      "pattern": "^\\d{4}-W\\d{2}$",
+      "examples": ["2026-W09", "2026-W10"]
+    },
+    "date_range": {
+      "type": "string",
+      "description": "Human-readable date range for the week",
+      "examples": ["March 3-9"]
+    },
+    "change": {
+      "type": "string",
+      "description": "What was changed (specific and actionable)",
+      "maxLength": 500
+    },
+    "reason": {
+      "type": "string",
+      "description": "Why this change was made (data-driven justification)",
+      "maxLength": 500
+    },
+    "expected_impact": {
+      "type": "string",
+      "description": "Measurable expected outcome",
+      "maxLength": 300
+    },
+    "rollback_plan": {
+      "type": "string",
+      "description": "How to reverse this change if it fails",
+      "maxLength": 300
+    },
+    "blast_radius": {
+      "type": "string",
+      "description": "What could break in the worst case",
+      "maxLength": 300
+    },
+    "status": {
+      "type": "string",
+      "description": "Current status of the change",
+      "enum": [
+        "DRAFT",
+        "APPLIED",
+        "SUCCESSFUL",
+        "FAILED",
+        "REJECTED",
+        "DEFERRED"
+      ]
+    },
+    "verification_result": {
+      "type": ["string", "null"],
+      "description": "Result from the VERIFY step (filled in the following week)"
+    },
+    "approved_by": {
+      "type": "string",
+      "description": "Who approved the change",
+      "default": "operator"
+    }
+  },
+  "additionalProperties": false
+}

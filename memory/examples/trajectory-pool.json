@@ -1,0 +1,107 @@
+[
+  {
+    "id": "2026-03-01-researcher-trend-scan",
+    "agent": "researcher-agent",
+    "task_type": "research",
+    "strategy": "GitHub trending + HackerNews top stories cross-reference",
+    "result": "SUCCESS",
+    "failure_reason": null,
+    "tokens_used": 8500,
+    "duration_s": 35,
+    "key_actions": [
+      "GitHub trending API query (7 days)",
+      "HackerNews top stories fetch",
+      "Cross-reference and dedup",
+      "Summarize top 10 trends"
+    ],
+    "lessons": "Cross-referencing two sources reduces noise significantly",
+    "critique_by": null,
+    "critique_result": null,
+    "model": "sonnet",
+    "cost_usd": 0.12,
+    "timestamp": "2026-03-01T09:15:00Z"
+  },
+  {
+    "id": "2026-03-01-content-weekly-report",
+    "agent": "content-agent",
+    "task_type": "report",
+    "strategy": "Structured template with metrics extraction from trajectory pool",
+    "result": "SUCCESS",
+    "failure_reason": null,
+    "tokens_used": 12000,
+    "duration_s": 42,
+    "key_actions": [
+      "Extract weekly metrics from trajectory pool",
+      "Generate agent performance summary",
+      "Write formatted markdown report"
+    ],
+    "lessons": null,
+    "critique_by": "analyst-agent",
+    "critique_result": "APPROVE — metrics accurate, format consistent",
+    "model": "sonnet",
+    "cost_usd": 0.18,
+    "timestamp": "2026-03-01T10:30:00Z"
+  },
+  {
+    "id": "2026-02-28-researcher-api-scan",
+    "agent": "researcher-agent",
+    "task_type": "scan",
+    "strategy": "NVD API query with severity filter",
+    "result": "FAILED",
+    "failure_reason": "API rate limit exceeded (429) — nighttime scan hit rate limits",
+    "tokens_used": 3200,
+    "duration_s": 15,
+    "key_actions": [
+      "NVD API query attempted",
+      "Received 429 rate limit response"
+    ],
+    "lessons": "NVD API rate limits are stricter at night — use daytime hours",
+    "critique_by": null,
+    "critique_result": null,
+    "model": "sonnet",
+    "cost_usd": 0.05,
+    "timestamp": "2026-02-28T03:15:00Z"
+  },
+  {
+    "id": "2026-02-28-social-media-engagement",
+    "agent": "social-media-agent",
+    "task_type": "social",
+    "strategy": "Thread format with question hook",
+    "result": "SUCCESS",
+    "failure_reason": null,
+    "tokens_used": 6800,
+    "duration_s": 22,
+    "key_actions": [
+      "Analyze trending topics",
+      "Draft thread with question hook",
+      "Optimize for engagement"
+    ],
+    "lessons": "Question hooks in first post increase engagement by ~40%",
+    "critique_by": "content-agent",
+    "critique_result": "APPROVE — tone appropriate, factually accurate",
+    "model": "opus",
+    "cost_usd": 0.35,
+    "timestamp": "2026-02-28T14:00:00Z"
+  },
+  {
+    "id": "2026-02-27-finance-cost-analysis",
+    "agent": "finance-agent",
+    "task_type": "financial",
+    "strategy": "SQLite metrics aggregation with trend analysis",
+    "result": "PARTIAL",
+    "failure_reason": "Cost data incomplete — bridge logs missing for 2 days",
+    "tokens_used": 9800,
+    "duration_s": 38,
+    "key_actions": [
+      "Query metrics.db for weekly costs",
+      "Detect gap in bridge logs",
+      "Generate partial report with caveats"
+    ],
+    "lessons": "Always check data completeness before analysis — report gaps explicitly",
+    "critique_by": "security-agent",
+    "critique_result": "ISSUE — incomplete data should be more prominently flagged",
+    "model": "sonnet",
+    "cost_usd": 0.15,
+    "timestamp": "2026-02-27T16:45:00Z"
+  }
+]

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trajectory Pool",
+  "description": "Schema for the trajectory pool — records of agent task outcomes used for evolution and learning.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "id",
+      "agent",
+      "task_type",
+      "strategy",
+      "result",
+      "tokens_used",
+      "duration_s",
+      "key_actions",
+      "timestamp"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "Unique identifier: YYYY-MM-DD-agent-task",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}-.+"
+      },
+      "agent": {
+        "type": "string",
+        "description": "Agent that performed the task",
+        "examples": ["researcher-agent", "content-agent", "finance-agent"]
+      },
+      "task_type": {
+        "type": "string",
+        "description": "Category of the task",
+        "enum": ["research", "content", "analysis", "report", "scan", "monitor", "code", "social", "financial"]
+      },
+      "strategy": {
+        "type": "string",
+        "description": "Approach used (1-2 sentences)",
+        "maxLength": 500
+      },
+      "result": {
+        "type": "string",
+        "description": "Task outcome",
+        "enum": ["SUCCESS", "FAILED", "PARTIAL"]
+      },
+      "failure_reason": {
+        "type": ["string", "null"],
+        "description": "Why the task failed (null if successful)",
+        "maxLength": 500
+      },
+      "tokens_used": {
+        "type": "integer",
+        "description": "Total tokens consumed",
+        "minimum": 0
+      },
+      "duration_s": {
+        "type": "integer",
+        "description": "Task duration in seconds",
+        "minimum": 0
+      },
+      "key_actions": {
+        "type": "array",
+        "description": "Main actions taken during the task",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1
+      },
+      "lessons": {
+        "type": ["string", "null"],
+        "description": "Learning note (1 sentence, optional)",
+        "maxLength": 300
+      },
+      "critique_by": {
+        "type": ["string", "null"],
+        "description": "Agent that reviewed the output (if critique was performed)"
+      },
+      "critique_result": {
+        "type": ["string", "null"],
+        "description": "Summary of the critique assessment"
+      },
+      "model": {
+        "type": "string",
+        "description": "Model used for this task"
+      },
+      "cost_usd": {
+        "type": "number",
+        "description": "Cost in USD",
+        "minimum": 0
+      },
+      "timestamp": {
+        "type": "string",
+        "description": "ISO 8601 timestamp",
+        "format": "date-time"
+      }
+    },
+    "additionalProperties": false
+  },
+  "maxItems": 100
+}

@@ -1,0 +1,153 @@
+# Agent Evolution Kit — Routing Profiles Configuration
+# Copy this file to routing-profiles.yaml and customize for your agents.
+# Defines how tasks are routed to agents based on capabilities and preferences.
+
+# =============================================================================
+# ROUTING VECTORS
+# =============================================================================
+# Each task type has a 3-dimensional preference vector: [Quality, Cost, Speed]
+# Values: critical, high, medium, low, zero
+#
+# These vectors determine model selection and agent routing.
+
+task_profiles:
+  research:
+    quality: high
+    cost: low
+    speed: medium
+    preferred_model: opus
+    description: "Deep research, analysis, technical decisions"
+
+  content_creation:
+    quality: high
+    cost: low
+    speed: medium
+    preferred_model: opus
+    description: "Writing content, reports, documentation"
+
+  quick_classification:
+    quality: low
+    cost: zero
+    speed: high
+    preferred_model: fast       # Groq, Cerebras, or Haiku
+    description: "Email triage, spam filtering, categorization"
+
+  summarization:
+    quality: medium
+    cost: zero
+    speed: high
+    preferred_model: fast
+    description: "News summaries, digest generation"
+
+  code_review:
+    quality: high
+    cost: low
+    speed: low
+    preferred_model: opus
+    description: "Security review, code quality analysis"
+
+  urgent_alert:
+    quality: medium
+    cost: low
+    speed: critical             # Lowest latency provider
+    preferred_model: flash
+    description: "Time-sensitive notifications and alerts"
+
+  monitoring:
+    quality: low
+    cost: zero
+    speed: high
+    preferred_model: fast
+    description: "Health checks, status monitoring"
+
+# Default profile for unclassified tasks
+default_profile:
+  quality: medium
+  cost: low
+  speed: medium
+  preferred_model: sonnet
+
+# =============================================================================
+# CAPABILITY-AGENT MATRIX
+# =============================================================================
+# Maps capabilities to agents in priority order: primary → secondary → fallback
+
+capabilities:
+  web_research:
+    primary: researcher-agent
+    secondary: analyst-agent
+    fallback: bridge              # LLM CLI bridge
+
+  code_analysis:
+    primary: analyst-agent
+    secondary: security-agent
+    fallback: bridge
+
+  content_writing:
+    primary: content-agent
+    secondary: social-media-agent
+    fallback: orchestrator
+
+  financial_analysis:
+    primary: finance-agent
+    secondary: analyst-agent
+    fallback: researcher-agent
+
+  system_health:
+    primary: security-agent
+    secondary: orchestrator
+    fallback: monitor-agent
+
+  social_media:
+    primary: social-media-agent
+    secondary: content-agent
+    fallback: researcher-agent
+
+  security_audit:
+    primary: security-agent
+    secondary: analyst-agent
+    fallback: orchestrator
+
+  trend_detection:
+    primary: researcher-agent
+    secondary: social-media-agent
+    fallback: analyst-agent
+
+# =============================================================================
+# ROUTING RULES
+# =============================================================================
+
+routing:
+  # Minimum success rate to remain primary for a task type
+  min_success_rate: 0.70
+
+  # Consecutive same-type failures before temporary disable
+  disable_after_failures: 3
+
+  # How to handle new task types (no trajectory data)
+  new_task_type_strategy: "primary"   # Route to primary, record as baseline
+
+  # Fallback to bridge if no suitable agent
+  bridge_fallback: true
+  bridge_budget_limit: 2.00           # USD per bridge call
+
+# =============================================================================
+# MODEL ROUTING
+# =============================================================================
+# Maps preference levels to concrete model choices.
+# Customize these for your available models and providers.
+
+model_map:
+  opus: "claude-opus-4-6"
+  sonnet: "claude-sonnet-4-6"
+  haiku: "claude-haiku-4-5"
+  fast: "groq-llama-70b"       # Or: cerebras, together-ai, etc.
+  flash: "groq-llama-8b"       # Lowest latency option
+  cheap: "haiku"               # For evaluation tasks
+
+# Fallback chain when primary model is unavailable
+model_fallback:
+  opus: ["sonnet", "haiku"]
+  sonnet: ["haiku", "opus"]
+  fast: ["haiku", "sonnet"]
+  flash: ["fast", "haiku"]

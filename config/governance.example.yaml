@@ -1,0 +1,167 @@
+# Agent Evolution Kit — Governance Configuration
+# Copy this file to governance.yaml and customize for your environment.
+# This file defines the safety boundaries and operational rules for your agent system.
+
+# =============================================================================
+# ESCALATION RULES
+# =============================================================================
+# Define which actions require operator approval vs autonomous execution.
+
+escalation:
+  # Actions agents can perform without approval
+  autonomous:
+    - read_files
+    - run_existing_scripts
+    - system_info_queries      # date, uptime, hostname
+    - git_read_operations      # git log, git status
+    - trajectory_recording
+    - reflexion_writing
+    - circuit_breaker_state_changes
+    - research_tasks
+    - metric_recording
+
+  # Actions requiring operator approval
+  requires_approval:
+    - production_deployments
+    - config_changes
+    - prompt_evolution_apply    # Weekly evolution changes
+    - model_changes            # Switching agent models
+    - agent_add_remove
+    - cron_schedule_changes
+    - file_deletion
+    - branch_deletion
+
+  # Actions that are NEVER allowed (even with approval)
+  forbidden:
+    - force_push
+    - secret_commit            # API keys, tokens in code
+    - production_deploy_without_rollback
+    - security_rule_modification   # Only operator can change manually
+    - self_modifying_code          # Agents modify only prompts/config, never code
+
+# =============================================================================
+# EVOLUTION CONSTRAINTS
+# =============================================================================
+
+evolution:
+  # Maximum changes per weekly cycle
+  max_changes_per_cycle: 1      # Bundle changes FORBIDDEN
+
+  # What evolution CAN modify
+  mutable:
+    - agent_system_prompts      # Tactical/strategic rule add/remove
+    - agent_model_config        # Model selection
+    - cron_schedules            # Timing changes
+    - agent_strategy_params
+
+  # What evolution CANNOT modify
+  immutable:
+    - orchestrator_core_logic
+    - agent_code_structure
+    - security_constraints
+    - file_system_permissions
+
+  # Rule limits per agent
+  max_tactical_rules: 10
+  max_strategic_rules: 5
+  tactical_rule_expiry_weeks: 4
+  strategic_rule_review_months: 3
+
+# =============================================================================
+# CIRCUIT BREAKER
+# =============================================================================
+
+circuit_breaker:
+  # Consecutive failures before opening circuit
+  failure_threshold: 3
+  # Time before half-open probe (seconds)
+  recovery_timeout: 300
+  # Alert operator if circuit open longer than (seconds)
+  alert_threshold: 86400       # 24 hours
+
+  # Retry strategy
+  retry:
+    initial_delay_ms: 1000
+    multiplier: 2              # Exponential backoff
+    max_delay_ms: 16000
+
+# =============================================================================
+# BUDGET LIMITS
+# =============================================================================
+
+budget:
+  # Per-call limits (USD)
+  max_per_call: 2.00
+  # Daily limit
+  max_daily: 20.00
+  # Weekly limit
+  max_weekly: 100.00
+  # Alert threshold (% of weekly budget)
+  alert_at_percent: 80
+
+# =============================================================================
+# EVALUATION
+# =============================================================================
+
+evaluation:
+  # Layer 1 (heuristic) — runs on ALL outputs
+  layer1:
+    min_output_length: 50      # chars, for important tasks
+    max_repetition: 3          # consecutive similar paragraphs
+    encoding_check: true
+
+  # Layer 2 (LLM) — runs only when needed
+  layer2:
+    model: "cheap-fast"        # Use cheapest available model
+    score_reject: 4            # Below this = reject
+    score_flag: 7              # Below this = accept with review flag
+    max_overhead_percent: 10   # Evaluation time vs task time
+
+# =============================================================================
+# MAKER-CHECKER
+# =============================================================================
+
+maker_checker:
+  enabled: true
+  max_iterations: 3
+  content_threshold: 7         # Layer 2 score
+  security_mode: "binary"      # approve/reject
+  strategic_threshold: 8       # Orchestrator score
+
+# =============================================================================
+# TRUST SCORES
+# =============================================================================
+
+trust:
+  # Initial trust for new agents
+  default_score: 0.7
+  # Trust adjustment
+  success_increment: 0.01
+  failure_decrement: 0.05
+  # Minimum trust to operate autonomously
+  autonomous_threshold: 0.5
+  # Below this = agent suspended pending review
+  suspension_threshold: 0.3
+
+# =============================================================================
+# DATA SECURITY
+# =============================================================================
+
+security:
+  # What NEVER appears in trajectory/reflection/evolution data
+  forbidden_in_logs:
+    - api_keys
+    - tokens
+    - passwords
+    - personal_data
+    - webhook_urls
+
+  # Trajectory records contain
+  trajectory_includes:
+    - task_summary              # YES
+    - strategy_used             # YES
+    - error_category            # YES
+  trajectory_excludes:
+    - raw_data                  # NO
+    - user_content              # NO
+    - api_responses             # NO
