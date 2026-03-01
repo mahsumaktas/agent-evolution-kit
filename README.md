@@ -106,7 +106,7 @@ No existing framework combines all four: **self-evolution**, **cognitive memory*
 
 ### Self-Evolution Cycle
 The weekly heartbeat of the system. Every cycle: collect trajectories, run reflexion on failures, generate prompt mutations via SCOPE, evaluate with cross-agent critique, and promote the best-performing variants. This is how agents get measurably better over time without human intervention.
-[Read more: `docs/self-evolution-cycle.md`](docs/self-evolution-cycle.md)
+[Read more: `docs/self-evolution-playbook.md`](docs/self-evolution-playbook.md)
 
 ### Reflexion Protocol
 When an agent fails, it generates a verbal self-reflection analyzing what went wrong and produces a concrete tactical rule to prevent recurrence. Based on Shinn et al. (2023), extended with persistent rule storage and conflict detection across agents.
@@ -162,7 +162,7 @@ The orchestrator never writes code, never calls external APIs directly, and neve
 
 ### Governance Framework
 The overarching system that ties trust scores, circuit breakers, budget limits, maker-checker loops, and audit logging into a coherent operational model. Every agent action is logged, every resource consumption is tracked, and every high-risk operation goes through a defined approval flow.
-[Read more: `docs/governance.md`](docs/governance.md)
+[Architecture: `docs/architecture.md`](docs/architecture.md) | [Config: `config/governance.example.yaml`](config/governance.example.yaml)
 
 ---
 
@@ -180,11 +180,11 @@ cd agent-evolution-kit
 # Copy the skill definitions into your Claude Code skills directory
 cp -r skills/ ~/.claude/skills/
 
-# Copy the orchestration config into your project
-cp config/orchestration.md YOUR_PROJECT/ORCHESTRATION.md
+# Copy the orchestration template into your project
+cp templates/orchestration.md YOUR_PROJECT/ORCHESTRATION.md
 
 # Customize agent definitions for your use case
-# Edit config/agents.yaml to define your specialist agents
+# Use templates/agent-profile.md as a starting point for each agent
 ```
 
 Then add to your project's `CLAUDE.md`:
@@ -193,7 +193,7 @@ Then add to your project's `CLAUDE.md`:
 ## Agent Evolution
 - Follow ORCHESTRATION.md for all task routing
 - After any failed task, run the Reflexion Protocol (docs/reflexion-protocol.md)
-- Weekly: run the self-evolution cycle (docs/self-evolution-cycle.md)
+- Weekly: run the self-evolution cycle (docs/self-evolution-playbook.md)
 - Store trajectories in memory/trajectory-pool.json
 - Store reflections in memory/reflections/{agent-name}/
 ```
@@ -216,7 +216,7 @@ cat docs/architecture.md
 # See docs/trajectory-learning.md for schema and operators
 
 # Add governance controls
-# See docs/governance.md for circuit breaker and trust score specs
+# See config/governance.example.yaml for circuit breaker and trust score specs
 ```
 
 ### Track 3: Just the Evolution System
@@ -228,12 +228,12 @@ git clone https://github.com/mahsumaktas/agent-evolution-kit.git
 cd agent-evolution-kit
 
 # Core evolution files you need:
-# - docs/reflexion-protocol.md      (failure reflection)
-# - docs/prompt-evolution.md        (SCOPE dual-stream optimization)
-# - docs/trajectory-learning.md     (experience storage and operators)
-# - templates/reflexion-template.md (reflection prompt template)
-# - templates/evolution-template.md (weekly cycle prompt template)
-# - scripts/evolution-cycle.sh      (automated weekly cycle runner)
+# - docs/reflexion-protocol.md          (failure reflection)
+# - docs/prompt-evolution.md            (SCOPE dual-stream optimization)
+# - docs/trajectory-learning.md         (experience storage and operators)
+# - docs/self-evolution-playbook.md     (weekly cycle specification)
+# - memory/schemas/trajectory-pool.schema.json  (trajectory data schema)
+# - scripts/weekly-cycle.sh             (automated weekly cycle runner)
 ```
 
 Minimum integration requires:
@@ -328,70 +328,76 @@ ArXiv references: [2303.11366](https://arxiv.org/abs/2303.11366), [2512.20845](h
 
 ```
 agent-evolution-kit/
-├── README.md                          # You are here
-├── LICENSE                            # MIT License
-├── CONTRIBUTING.md                    # Contribution guidelines
+├── README.md                              # You are here
+├── LICENSE                                # MIT License
+├── CONTRIBUTING.md                        # Contribution guidelines
 │
 ├── config/
-│   ├── orchestration.md               # Master orchestration rules
-│   ├── agents.yaml                    # Agent definitions and capabilities
-│   └── governance.yaml                # Trust scores, budget limits, thresholds
+│   ├── governance.example.yaml            # Trust scores, budget limits, thresholds
+│   └── routing-profiles.example.yaml      # Task-to-agent routing configuration
 │
 ├── docs/
-│   ├── architecture.md                # System architecture and pure orchestrator pattern
-│   ├── self-evolution-cycle.md        # Weekly evolution cycle specification
-│   ├── reflexion-protocol.md          # Reflexion implementation guide
-│   ├── trajectory-learning.md         # SE-Agent trajectory operators
-│   ├── prompt-evolution.md            # SCOPE dual-stream optimization
-│   ├── cross-agent-critique.md        # MAR multi-agent review
-│   ├── metacognitive-reflection.md    # MARS dual-level reflection
-│   ├── record-and-replay.md           # AgentRR experience management
-│   ├── cognitive-memory.md            # FSRS-6, PE gating, BCM pruning
-│   ├── hybrid-evaluation.md           # Combined evaluation strategies
-│   ├── circuit-breaker.md             # Failure detection and recovery
-│   ├── maker-checker.md               # Dual-approval for high-risk actions
-│   ├── capability-routing.md          # Task-to-agent matching algorithm
-│   ├── autonomy-layers.md             # Five-level autonomy model
-│   └── governance.md                  # Trust, budgets, and audit framework
+│   ├── architecture.md                    # System architecture and pure orchestrator pattern
+│   ├── quick-start.md                     # 15-minute setup guide
+│   ├── self-evolution-playbook.md         # Weekly evolution cycle specification
+│   ├── reflexion-protocol.md              # Reflexion implementation guide
+│   ├── trajectory-learning.md             # SE-Agent trajectory operators
+│   ├── prompt-evolution.md                # SCOPE dual-stream optimization
+│   ├── cross-agent-critique.md            # MAR multi-agent review
+│   ├── metacognitive-reflection.md        # MARS dual-level reflection
+│   ├── record-and-replay.md               # AgentRR experience management
+│   ├── cognitive-memory.md                # FSRS-6, PE gating, BCM pruning
+│   ├── hybrid-evaluation.md               # Combined evaluation strategies
+│   ├── circuit-breaker.md                 # Failure detection and recovery
+│   ├── maker-checker.md                   # Dual-approval for high-risk actions
+│   ├── capability-routing.md              # Task-to-agent matching algorithm
+│   ├── autonomy-layers.md                 # Five-level autonomy model
+│   └── academic-references.md             # Paper summaries and citations
 │
 ├── skills/
-│   ├── reflexion/                     # Reflexion skill definition
-│   │   └── SKILL.md
-│   ├── evolution/                     # Self-evolution cycle skill
-│   │   └── SKILL.md
-│   ├── trajectory/                    # Trajectory management skill
-│   │   └── SKILL.md
-│   ├── critique/                      # Cross-agent critique skill
-│   │   └── SKILL.md
-│   ├── memory/                        # Cognitive memory operations skill
-│   │   └── SKILL.md
-│   └── governance/                    # Governance enforcement skill
-│       └── SKILL.md
+│   ├── README.md                          # Skills system overview
+│   ├── tdd-workflow/SKILL.md              # Test-driven development workflow
+│   ├── systematic-debugging/SKILL.md      # 4-phase debugging methodology
+│   ├── verification-gate/SKILL.md         # Evidence-based verification
+│   ├── structured-brainstorming/SKILL.md  # HARD-GATE design process
+│   ├── subagent-execution/SKILL.md        # 3-mode subagent delegation
+│   └── orchestrator-loop/SKILL.md         # 5-step delegation pipeline
 │
 ├── templates/
-│   ├── reflexion-template.md          # Prompt template for failure reflection
-│   ├── evolution-template.md          # Prompt template for weekly evolution
-│   ├── critique-template.md           # Prompt template for cross-agent review
-│   ├── mars-template.md               # Prompt template for metacognitive reflection
-│   └── agent-definition-template.yaml # Template for defining new agents
+│   ├── identity.md                        # Orchestrator identity template
+│   ├── agent-profile.md                   # Agent profile template
+│   ├── claude-md.md                       # CLAUDE.md integration template
+│   └── orchestration.md                   # Orchestration configuration template
 │
 ├── scripts/
-│   ├── evolution-cycle.sh             # Automated weekly evolution runner
-│   ├── trajectory-maintenance.sh      # Trajectory pool cleanup and archival
-│   └── metrics-report.sh             # Generate evolution metrics dashboard
+│   ├── README.md                          # Scripts overview and prerequisites
+│   ├── bridge.sh                          # Nested LLM CLI wrapper with presets
+│   ├── watchdog.sh                        # 4-tier self-healing process monitor
+│   ├── metrics.sh                         # SQLite-based metrics and cost tracking
+│   ├── briefing.sh                        # Tri-phase daily status reporting
+│   ├── goal-decompose.sh                  # HTN-style goal tree management
+│   ├── skill-discovery.sh                 # Capability gap detection
+│   ├── predict.sh                         # Predictive engine (4 modes)
+│   ├── research.sh                        # Autonomous research engine
+│   ├── system-check.sh                    # System health monitoring
+│   └── weekly-cycle.sh                    # Weekly evolution automation
 │
 ├── examples/
-│   ├── minimal-setup/                 # Bare minimum: 1 orchestrator + 2 agents
-│   │   ├── README.md
-│   │   └── config/
-│   └── full-setup/                    # Complete: 6 agents + all evolution protocols
-│       ├── README.md
-│       └── config/
+│   ├── claude-code-setup/                 # Full Claude Code integration example
+│   │   ├── CLAUDE.md
+│   │   └── AGENTS.md
+│   └── minimal-evolution/                 # Minimal reflexion + prompt evolution
+│       └── README.md
 │
 └── memory/
-    ├── trajectory-pool.json           # Example trajectory pool structure
-    └── reflections/                   # Example reflection storage
-        └── .gitkeep
+    ├── README.md                          # Memory system documentation
+    ├── schemas/
+    │   ├── trajectory-pool.schema.json    # Trajectory data JSON Schema
+    │   └── evolution-log.schema.json      # Evolution log JSON Schema
+    └── examples/
+        ├── trajectory-pool.json           # Example trajectory records
+        ├── evolution-log.md               # Example evolution log entries
+        └── reflection-example.md          # Example reflection with MARS extraction
 ```
 
 ---
