@@ -198,6 +198,61 @@ section_metrics_summary() {
     echo ""
 }
 
+section_circuit_breaker() {
+    echo "### Circuit Breaker Status"
+    echo ""
+    local cb_script="$AEK_HOME/scripts/circuit-breaker.sh"
+    if [[ -x "$cb_script" ]]; then
+        bash "$cb_script" status 2>/dev/null || echo "  CB data unavailable"
+    else
+        echo "  Circuit breaker not installed"
+    fi
+    echo ""
+}
+
+section_eval_summary() {
+    echo "### Eval Quality Scores (7d)"
+    echo ""
+    python3 - "$MEMORY_DIR/trajectory-pool.json" <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        raw = json.load(f)
+    entries = raw.get("entries", raw) if isinstance(raw, dict) else raw
+    scored = [e for e in entries if e.get("eval_score")]
+    if not scored:
+        print("  No eval data yet")
+    else:
+        avg = sum(e["eval_score"] for e in scored) / len(scored)
+        low = [e for e in scored if e["eval_score"] < 40]
+        print(f"  Average score: {avg:.0f}/100 ({len(scored)} evaluated)")
+        if low:
+            print(f"  Low quality outputs: {len(low)}")
+except Exception:
+    print("  Eval data unavailable")
+PYEOF
+    echo ""
+}
+
+section_shadow_reviews() {
+    echo "### Shadow Agent Reviews"
+    echo ""
+    local shadow_dir="$MEMORY_DIR/shadow-reviews"
+    if [[ -d "$shadow_dir" ]]; then
+        local count
+        count=$(find "$shadow_dir" -name "*.md" -mtime -7 2>/dev/null | wc -l | tr -d ' ')
+        echo "  Reviews this week: $count"
+        local latest
+        latest=$(find "$shadow_dir" -name "*.md" -mtime -1 2>/dev/null | tail -1)
+        if [[ -n "$latest" ]]; then
+            echo "  Latest: $(head -1 "$latest")"
+        fi
+    else
+        echo "  Shadow agent system not active"
+    fi
+    echo ""
+}
+
 # === Midday Sections ===
 
 section_unresolved() {
@@ -313,6 +368,10 @@ compose_morning() {
         hr
         section_metrics_summary
         hr
+        section_circuit_breaker
+        section_eval_summary
+        section_shadow_reviews
+        hr
         echo ""
         echo "*Briefing completed at $(date '+%H:%M:%S')*"
     } | tee "$output"
@@ -362,6 +421,10 @@ compose_evening() {
         section_goals
         hr
         section_system
+        hr
+        section_circuit_breaker
+        section_eval_summary
+        section_shadow_reviews
         hr
         echo ""
         echo "*Evening review completed at $(date '+%H:%M:%S')*"

@@ -100,6 +100,7 @@ The **orchestrator** sits at the center and never executes tasks directly. It ro
 | Swarm Patterns (24 orchestration templates) | Yes | No | No | No |
 | Consensus Engine (5 voting types) | Yes | No | No | No |
 | Shadow Agent (observer monitoring) | Yes | No | No | No |
+| Context Compaction (5-stage memory cleanup) | Yes | No | No | No |
 
 No existing framework combines all four: **self-evolution**, **cognitive memory**, **pure orchestration**, and **governance-first design**.
 
@@ -178,6 +179,10 @@ Observer pattern for automated agent monitoring. A shadow agent watches other ag
 ### Priority Queue
 P0-P4 task prioritization with keyword-based auto-assignment and queue drop policies. Critical tasks are never dropped; low-priority tasks are shed under load. Integrates with goal decomposition and the bridge for priority-aware task routing.
 [Read more: `docs/priority-queue.md`](docs/priority-queue.md)
+
+### Context Compaction
+5-stage automated memory cleanup: trajectory archival, bridge log rotation, reflection deduplication via Jaccard similarity, importance-scored knowledge demotion, and dated directory archival. Keeps memory lean without losing important information. Runs as part of the weekly evolution cycle or on-demand.
+[Read more: `docs/context-compaction.md`](docs/context-compaction.md)
 
 ### Hybrid Evaluation
 Two-layer quality gate: Layer 1 runs zero-cost heuristic checks on every output (8 standard checks plus custom per-agent checks). Layer 2 invokes a cheap LLM evaluation only for flagged or high-importance outputs. Keeps evaluation costs near zero for routine work.
@@ -397,6 +402,7 @@ agent-evolution-kit/
 │   ├── consensus-engine.md                # 5-type voting engine
 │   ├── shadow-agent.md                    # Observer pattern for monitoring
 │   ├── priority-queue.md                  # P0-P4 task prioritization
+│   ├── context-compaction.md              # Memory compaction engine
 │   └── academic-references.md             # Paper summaries and citations
 │
 ├── skills/
@@ -431,8 +437,12 @@ agent-evolution-kit/
 │   ├── maker-checker.sh                   # Dual-agent verification loop
 │   ├── swarm.sh                           # Swarm pattern runner
 │   ├── replay.sh                          # Record and replay engine
+│   ├── shadow-agent.sh                    # Shadow agent observer system
+│   ├── critique.sh                        # Cross-agent critique (MAR pattern)
+│   ├── context-compact.sh                 # Context compaction wrapper
 │   └── helpers/
-│       └── consensus.py                   # Consensus voting engine
+│       ├── consensus.py                   # Consensus voting engine
+│       └── context-compactor.py           # Memory compaction engine
 │
 ├── examples/
 │   ├── claude-code-setup/                 # Full Claude Code integration example

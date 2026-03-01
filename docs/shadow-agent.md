@@ -158,3 +158,45 @@ Shadow observations are logged in a structured format:
   for weekly evolution reports.
 - **Briefing:** Daily briefing includes a summary of shadow agent findings from the
   previous period.
+
+## Implementation
+
+The shadow agent system is implemented in `scripts/shadow-agent.sh`. It reads
+configuration from `config/shadow-agents.yaml` and stores reviews in
+`memory/shadow-reviews/`.
+
+### Commands
+
+```bash
+# Run a single review for a specific agent and trigger
+scripts/shadow-agent.sh review --target writer-agent --trigger code_written
+
+# Pipe context from stdin
+echo "task output here" | scripts/shadow-agent.sh review --target writer-agent --trigger code_written
+
+# Show all shadow configurations and today's review counts
+scripts/shadow-agent.sh status
+
+# Batch review recent trajectory entries (last 24 hours, max 5)
+scripts/shadow-agent.sh batch
+```
+
+### Review Output
+
+Reviews are saved as markdown files in `memory/shadow-reviews/` with the naming
+convention `YYYY-MM-DD-<target>-<trigger>-HHMMSS.md`. Each file includes:
+
+- Observer and target metadata in an HTML comment
+- Date, trigger, and mode information
+- Quality assessment (APPROVE / SUGGEST / FLAG)
+- Specific observations (1-3 bullet points)
+- Actionable recommendation
+
+### Built-in Safeguards
+
+- **Daily limit:** Configurable per observer-target pair via `max_reviews_per_day`.
+- **Cooldown:** Default 2-hour cooldown between reviews for the same target+trigger
+  combination.
+- **Cost control:** Uses `--quick` bridge preset (haiku model) for all reviews.
+- **Graceful degradation:** Bridge failures do not propagate; the review is simply
+  skipped.

@@ -92,3 +92,46 @@ Assessment definitions:
   reports, status pings) are exempt from critique.
 - **Time budget**: Critique should not take longer than 20% of the original task
   duration. If the review would be more expensive than the task, skip it.
+
+## Implementation
+
+The critique system is implemented in `scripts/critique.sh`. It uses the bridge
+script for LLM calls and stores critiques in `memory/critiques/`.
+
+### Commands
+
+```bash
+# Evaluate a specific output file
+scripts/critique.sh --output memory/reflections/researcher-agent/2026-03-01.md --agent researcher-agent
+
+# Show the critique assignment matrix
+scripts/critique.sh --matrix
+
+# Batch evaluate high-impact tasks from last 7 days
+scripts/critique.sh --batch
+```
+
+### Critique Matrix (Default)
+
+| Producer           | Reviewer          | Focus Area                      |
+| ------------------ | ----------------- | ------------------------------- |
+| researcher-agent   | analyst-agent     | Research depth, source diversity |
+| social-agent       | writer-agent      | Tone, engagement, accuracy      |
+| financial-agent    | guardian-agent    | Risk assessment, assumptions    |
+| writer-agent       | social-agent      | Social media fit                |
+| analyst-agent      | researcher-agent  | Completeness, missing areas     |
+| metrics-agent      | guardian-agent    | Measurement accuracy            |
+| * (other)          | orchestrator      | General quality review          |
+
+### Batch Mode
+
+The `--batch` command searches the trajectory pool for high-impact tasks from the
+last 7 days. Impact is scored using a combination of cost, duration, and token
+usage. Only tasks from known producers (those in the critique matrix) are selected.
+Maximum 3 items per batch, subject to the daily critique limit of 5.
+
+### Output Format
+
+Critiques are saved as `memory/critiques/YYYY-MM-DD-<producer>-<critic>.md` and
+include a verdict (APPROVE / SUGGEST / FLAG), strong points, issues, and
+recommendations.

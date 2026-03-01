@@ -44,6 +44,9 @@ SESSION_PERSIST="--no-session-persistence"
 LOG_DIR="$AEK_HOME/memory/bridge-logs"
 TRAJECTORY_FILE="$AEK_HOME/memory/trajectory-pool.json"
 CB_SCRIPT="$AEK_HOME/scripts/circuit-breaker.sh"
+REPLAY_ENABLED="${REPLAY_ENABLED:-true}"
+EVAL_ENABLED="${EVAL_ENABLED:-false}"
+AEK_PRIORITY="${AEK_PRIORITY:-}"
 
 # === COLORS ===
 RED='\033[0;31m'
@@ -95,8 +98,15 @@ entry = {
     "cost_usd": float(cost),
     "turns": int(turns),
     "caller": caller,
-    "result": result
+    "result": result,
+    "task_type": os.environ.get("AEK_TASK_TYPE", "general")
 }
+eval_sc = os.environ.get("BRIDGE_EVAL_SCORE", "")
+if eval_sc and eval_sc.isdigit():
+    entry["eval_score"] = int(eval_sc)
+priority = os.environ.get("AEK_PRIORITY", "")
+if priority:
+    entry["priority"] = priority
 entries.append(entry)
 
 # Keep last 100 entries
@@ -137,6 +147,11 @@ Options:
   --text                 Text output (shorthand for --output text)
   --silent               Suppress log messages
   --dry-run              Show command without executing
+  --replay               Enable replay context injection (default: on)
+  --no-replay            Disable replay context injection
+  --eval                 Enable eval post-hook scoring
+  --no-eval              Disable eval post-hook scoring (default)
+  --priority <P0-P4>     Manual priority override
 
 Presets:
   --research             Deep research mode (opus, 50 turns, $2.00 budget)
@@ -150,6 +165,10 @@ Environment Variables:
   AEK_HOME               Kit root directory (default: ~/agent-evolution-kit)
   CLI_BIN                Path to LLM CLI binary (default: auto-detect claude)
   BRIDGE_CALLER          Caller identifier for cost log (default: manual)
+  AEK_PRIORITY           Priority level override (P0-P4)
+  AEK_TASK_TYPE          Task type for trajectory enrichment (default: general)
+  REPLAY_ENABLED         Enable replay injection (default: true)
+  EVAL_ENABLED           Enable eval post-hook (default: false)
 EOF
     exit 1
 }
@@ -174,12 +193,17 @@ while [[ $# -gt 0 ]]; do
         --silent)    SILENT=true; shift;;
         --dry-run)   DRY_RUN=true; shift;;
         # Presets
-        --research)  MODEL="opus"; MAX_TURNS=50; BUDGET="2.00"; shift;;
+        --research)  MODEL="opus"; MAX_TURNS=50; BUDGET="2.00"; EVAL_ENABLED=true; shift;;
         --quick)     MODEL="haiku"; MAX_TURNS=3; BUDGET="0.10"; shift;;
-        --code)      MODEL="sonnet"; MAX_TURNS=30; BUDGET="1.50"; shift;;
-        --analyze)   MODEL="opus"; MAX_TURNS=20; BUDGET="1.00"; shift;;
-        --tool-gen)  MODEL="sonnet"; MAX_TURNS=40; BUDGET="2.00"; shift;;
+        --code)      MODEL="sonnet"; MAX_TURNS=30; BUDGET="1.50"; EVAL_ENABLED=true; shift;;
+        --analyze)   MODEL="opus"; MAX_TURNS=20; BUDGET="1.00"; EVAL_ENABLED=true; shift;;
+        --tool-gen)  MODEL="sonnet"; MAX_TURNS=40; BUDGET="2.00"; EVAL_ENABLED=true; shift;;
         --system)    MODEL="sonnet"; MAX_TURNS=15; BUDGET="0.50"; shift;;
+        --replay)    REPLAY_ENABLED=true; shift;;
+        --no-replay) REPLAY_ENABLED=false; shift;;
+        --eval)      EVAL_ENABLED=true; shift;;
+        --no-eval)   EVAL_ENABLED=false; shift;;
+        --priority)  AEK_PRIORITY="$2"; shift 2;;
         --help|-h)   usage;;
         -*)          err "Unknown option: $1"; usage;;
         *)           PROMPT="$1"; shift;;
@@ -193,6 +217,21 @@ if [[ -z "$PROMPT" ]]; then
     else
         err "Prompt required"
         usage
+    fi
+fi
+
+# === REPLAY INJECTION (before CMD build so enriched PROMPT is captured) ===
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPLAY_SCRIPT="$SCRIPT_DIR/replay.sh"
+if [[ "$REPLAY_ENABLED" == "true" && -x "$REPLAY_SCRIPT" ]]; then
+    TASK_TYPE="${AEK_TASK_TYPE:-general}"
+    REPLAY_CTX=$("$REPLAY_SCRIPT" --task-type "$TASK_TYPE" --max 2 --inject 2>/dev/null) || true
+    if [[ -n "$REPLAY_CTX" ]]; then
+        PROMPT="${PROMPT}
+
+## Past Experience (Similar Tasks)
+${REPLAY_CTX}"
+        $SILENT || log "Replay: ${#REPLAY_CTX} chars injected"
     fi
 fi
 
@@ -236,6 +275,57 @@ if [[ -x "$CB_SCRIPT" ]]; then
         exit 2
     fi
 fi
+
+# === GOVERNANCE CHECK ===
+GOVERNANCE_SCRIPT="$SCRIPT_DIR/governance.sh"
+if [[ -x "$GOVERNANCE_SCRIPT" ]]; then
+    GOV_RESULT=$("$GOVERNANCE_SCRIPT" check "$CB_CALLER" "execute" 2>/dev/null) || true
+    if [[ "$GOV_RESULT" == *"BLOCKED"* ]]; then
+        err "Governance blocked: $GOV_RESULT"
+        exit 3
+    fi
+    $SILENT || [[ -z "$GOV_RESULT" ]] || log "Governance: $GOV_RESULT"
+fi
+
+# === PRIORITY ASSIGNMENT ===
+if [[ -z "$AEK_PRIORITY" ]]; then
+    PRIORITY_CONFIG="$AEK_HOME/config/priority-rules.yaml"
+    if [[ -f "$PRIORITY_CONFIG" ]] && command -v python3 &>/dev/null; then
+        AEK_PRIORITY=$(python3 - "$PRIORITY_CONFIG" "$PROMPT" <<'PYEOF'
+import sys, re
+
+config_file, prompt = sys.argv[1], sys.argv[2].lower()
+# Simple YAML parser for priority-rules.yaml structure
+current_level = None
+level_keywords = {}
+with open(config_file) as f:
+    for line in f:
+        stripped = line.strip()
+        m = re.match(r'^(P\d):', stripped)
+        if m:
+            current_level = m.group(1)
+            level_keywords[current_level] = []
+            continue
+        if current_level and stripped.startswith("keywords:"):
+            kws = re.findall(r'[\w-]+', stripped.replace("keywords:", ""))
+            level_keywords[current_level] = kws
+
+# P2 omitted — it's the default when no keyword matches
+for level in ["P0", "P1", "P3", "P4"]:
+    for kw in level_keywords.get(level, []):
+        pattern = re.compile(r'\b' + re.escape(kw.lower()) + r'\b')
+        if pattern.search(prompt):
+            print(level)
+            sys.exit(0)
+print("P2")
+PYEOF
+        ) || AEK_PRIORITY="P2"
+    else
+        AEK_PRIORITY="P2"
+    fi
+fi
+export AEK_PRIORITY
+$SILENT || log "Priority: $AEK_PRIORITY"
 
 # === EXECUTE ===
 mkdir -p "$LOG_DIR"
@@ -389,6 +479,12 @@ RESULT=$(_run_with_timeout "$TIMEOUT" "${CMD[@]}" 2>/dev/null) || {
     echo "{\"ts\":\"$TIMESTAMP\",\"model\":\"$MODEL\",\"duration\":0,\"cost\":\"0\",\"turns\":\"0\",\"status\":\"FAILED\",\"caller\":\"${BRIDGE_CALLER:-manual}\"}" >> "$COST_LOG"
     # Trajectory (failure)
     append_trajectory "$EXIT_CODE" "0" "0"
+    # Shadow agent on failure too
+    SHADOW_SCRIPT="$SCRIPT_DIR/shadow-agent.sh"
+    if [[ -x "$SHADOW_SCRIPT" ]]; then
+        SHADOW_CTX="FAILED Task: $(echo "$PROMPT" | head -c200) | Exit: $EXIT_CODE | Model: $MODEL"
+        (echo "$SHADOW_CTX" | "$SHADOW_SCRIPT" review --target "${BRIDGE_CALLER:-manual}" --trigger "error" >/dev/null 2>&1) &
+    fi
     # Circuit breaker record (failure)
     [[ -x "$CB_SCRIPT" ]] && "$CB_SCRIPT" record "$CB_CALLER" failure >/dev/null 2>&1 || true
     # Reflexion trigger (post-failure hook)
@@ -401,6 +497,20 @@ DURATION=$((END_TIME - START_TIME))
 
 # === OUTPUT ===
 echo "$RESULT"
+
+# === EVAL POST-HOOK ===
+EVAL_SCORE=""
+if [[ "$EVAL_ENABLED" == "true" ]]; then
+    EVAL_SCRIPT="$SCRIPT_DIR/eval.sh"
+    if [[ -x "$EVAL_SCRIPT" ]]; then
+        EVAL_TMP=$(mktemp)
+        echo "$RESULT" > "$EVAL_TMP"
+        EVAL_SCORE=$("$EVAL_SCRIPT" --score "$EVAL_TMP" 2>/dev/null) || true
+        rm -f "$EVAL_TMP"
+        $SILENT || [[ -z "$EVAL_SCORE" ]] || log "Eval score: $EVAL_SCORE"
+    fi
+fi
+export BRIDGE_EVAL_SCORE="${EVAL_SCORE:-}"
 
 # === LOG ===
 if [[ "$OUTPUT_FORMAT" == "json" ]]; then
@@ -433,6 +543,24 @@ echo "$COST_ENTRY" >> "$COST_LOG"
 
 # === TRAJECTORY POOL (append entry for self-evolution tracking) ===
 append_trajectory "0" "${COST:-0}" "${TURNS:-1}"
+
+# === SHADOW AGENT POST-HOOK (background, non-blocking) ===
+SHADOW_SCRIPT="$SCRIPT_DIR/shadow-agent.sh"
+if [[ -x "$SHADOW_SCRIPT" ]]; then
+    SHADOW_TARGET="${BRIDGE_CALLER:-manual}"
+    SHADOW_TRIGGER="task_complete"
+    SHADOW_CTX="Task: $(echo "$PROMPT" | head -c200) | Model: $MODEL | Priority: $AEK_PRIORITY | Eval: ${EVAL_SCORE:-n/a} | Duration: ${DURATION}s"
+    (echo "$SHADOW_CTX" | "$SHADOW_SCRIPT" review --target "$SHADOW_TARGET" --trigger "$SHADOW_TRIGGER" >/dev/null 2>&1) &
+fi
+
+# === CRITIQUE POST-HOOK (P0/P1 only, background) ===
+CRITIQUE_SCRIPT="$SCRIPT_DIR/critique.sh"
+if [[ -x "$CRITIQUE_SCRIPT" && ("$AEK_PRIORITY" == "P0" || "$AEK_PRIORITY" == "P1") ]]; then
+    CRITIQUE_AGENT="${BRIDGE_CALLER:-manual}"
+    CRITIQUE_TMP=$(mktemp)
+    echo "$RESULT" > "$CRITIQUE_TMP"
+    ("$CRITIQUE_SCRIPT" --output "$CRITIQUE_TMP" --agent "$CRITIQUE_AGENT" >/dev/null 2>&1; rm -f "$CRITIQUE_TMP") &
+fi
 
 # === CIRCUIT BREAKER RECORD (success) ===
 [[ -x "$CB_SCRIPT" ]] && "$CB_SCRIPT" record "$CB_CALLER" success >/dev/null 2>&1 || true

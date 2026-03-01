@@ -161,3 +161,44 @@ priority_queue:
       - optimize
       - refactor
 ```
+
+## Implementation
+
+Priority assignment is integrated into `scripts/bridge.sh`. Every bridge call
+automatically determines a priority level based on the task prompt.
+
+### Bridge Priority Assignment
+
+The bridge script assigns priority in this order:
+
+1. **Manual override:** `--priority P1` flag or `AEK_PRIORITY=P1` environment variable.
+2. **Keyword matching:** Scans `config/priority-rules.yaml` for keyword matches in
+   the prompt text. Highest matching priority wins.
+3. **Default:** If no keywords match and no override is set, defaults to P2.
+
+```bash
+# Auto-assigned based on keywords in the prompt
+scripts/bridge.sh "Research trending AI topics for weekly report"
+# -> Auto-assigned P3 (keyword: "research")
+
+# Manual override via flag
+scripts/bridge.sh --priority P1 "Research trending AI topics"
+# -> Forced to P1
+
+# Manual override via environment
+AEK_PRIORITY=P0 scripts/bridge.sh "System is crashing"
+# -> Forced to P0
+```
+
+### Trajectory Enrichment
+
+The assigned priority is stored in each trajectory pool entry under the `priority`
+field. This enables post-hoc analysis of task distribution across priority levels
+and helps the weekly evolution cycle identify patterns in high-priority failures.
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AEK_PRIORITY` | Priority level override (P0-P4) | Auto-detected |
+| `AEK_TASK_TYPE` | Task type for trajectory enrichment | `general` |
