@@ -8,7 +8,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![GitHub stars](https://img.shields.io/github/stars/mahsumaktas/agent-evolution-kit?style=social)](https://github.com/mahsumaktas/agent-evolution-kit/stargazers)
 
-A production-tested framework for multi-agent orchestration where agents genuinely learn from their failures, evolve their own prompts, and govern themselves through academic self-evolution protocols. Built on peer-reviewed papers (Reflexion, MARS, SCOPE, MAR, A-MEM), cognitive memory v8.1 with hybrid search, dream consolidation, and utility scoring, plus a governance-first architecture with trust scores, circuit breakers, and budget controls. Currently running 11 agents across 28 skills with 40+ infrastructure scripts in daily production.
+A production-tested framework for multi-agent orchestration where agents genuinely learn from their failures, evolve their own prompts, and govern themselves through academic self-evolution protocols. Built on peer-reviewed papers (Reflexion, MARS, SCOPE, MAR, A-MEM), cognitive memory v9 with tier hierarchy, emotional memory, hybrid search, dream consolidation, and utility scoring, plus a governance-first architecture with trust scores, circuit breakers, and budget controls. Currently running 11 agents across 28 skills with 40+ infrastructure scripts in daily production.
 
 </div>
 
@@ -44,7 +44,7 @@ graph TB
         TRAJ[Trajectory Pool]
     end
 
-    subgraph "Cognitive Memory v8.1"
+    subgraph "Cognitive Memory v9"
         FSRS[FSRS-6 Spaced Repetition]
         PE[Prediction Error Gating]
         HYBRID[Hybrid Search RRF+MMR]
@@ -83,7 +83,7 @@ graph TB
     ORCH --- DAG & WATCH & SAND & BRIEF & CRON
 ```
 
-The **orchestrator** sits at the center and never executes tasks directly. It routes tasks to specialist agents based on capability matching, monitors execution through governance controls, and feeds results into the evolution engine. Failed tasks trigger reflexion, weekly cycles aggregate patterns into strategic rules and prompt mutations. Cognitive Memory v8.1 gives each agent long-term retention with hybrid search, dream consolidation, and utility-weighted retrieval.
+The **orchestrator** sits at the center and never executes tasks directly. It routes tasks to specialist agents based on capability matching, monitors execution through governance controls, and feeds results into the evolution engine. Failed tasks trigger reflexion, weekly cycles aggregate patterns into strategic rules and prompt mutations. Cognitive Memory v9 gives each agent long-term retention with tier hierarchy, emotional significance detection, hybrid search, dream consolidation, and utility-weighted retrieval.
 
 ---
 
@@ -97,7 +97,7 @@ The **orchestrator** sits at the center and never executes tasks directly. It ro
 | Trajectory learning | Yes (SE-Agent) | No | No | No |
 | Cross-agent critique | Yes (MAR) | No | No | No |
 | Prompt self-evolution | Yes (SCOPE) | No | No | No |
-| Cognitive memory (FSRS-6 + hybrid) | Yes (v8.1) | No | No | No |
+| Cognitive memory (FSRS-6 + hybrid) | Yes (v9) | No | No | No |
 | Dream consolidation | Yes | No | No | No |
 | Utility scoring (Bellman) | Yes | No | No | No |
 | Intent-based retrieval routing | Yes | No | No | No |
@@ -139,8 +139,8 @@ Dual-stream optimization: a **semantic stream** preserves task-critical instruct
 No agent reviews its own work in isolation. Multi-Agent Review assigns critique roles to peer agents who evaluate outputs from different domain perspectives.
 [Read more: `docs/cross-agent-critique.md`](docs/cross-agent-critique.md)
 
-### Cognitive Memory v8.1
-Long-term memory with hybrid search (vector + FTS + RRF fusion), FSRS-6 power-law decay, prediction error gating, dream consolidation (cluster + LLM merge + theme extraction), Bellman-style utility scoring, relational graphs (A-MEM spreading activation), HyDE query expansion, MMR diversity filtering, observer pipeline, strategic forgetting, and bi-temporal lifecycle.
+### Cognitive Memory v9
+Long-term memory with tier hierarchy (working, episodic, semantic), emotional significance detection, Hebbian co-activation, hybrid search (vector + FTS + RRF fusion), FSRS-6 power-law decay, prediction error gating, dream consolidation (cluster + LLM merge + theme extraction), Bellman-style utility scoring, relational graphs (A-MEM spreading activation), HyDE query expansion, MMR diversity filtering, observer pipeline, strategic forgetting, and bi-temporal lifecycle.
 [Read more: `docs/cognitive-memory.md`](docs/cognitive-memory.md)
 
 ### Dream Consolidation
@@ -275,6 +275,44 @@ ArXiv: [2303.11366](https://arxiv.org/abs/2303.11366), [2512.20845](https://arxi
 
 ---
 
+## The Brain: Where We Are and Where We're Going
+
+### Current State (After Phase 0--4)
+
+Each agent has a strong individual memory. It remembers what matters, forgets what doesn't, organizes knowledge into tiers (working, episodic, semantic), runs dream consolidation cycles to merge and compress, detects emotional significance, and strengthens associative links through Hebbian co-activation.
+
+But every agent is an island. CikCik learns something valuable -- no other agent knows. Soros makes a strategic decision -- it never reaches the orchestrator. Eleven agents, eleven isolated brains.
+
+### The Full Vision (After Phase 5--11)
+
+| Capability | Now (Phase 0--4) | After (Phase 5--11) |
+|---|---|---|
+| **Cross-agent knowledge** | Zero. Every agent is isolated. | Federation -- what CikCik learns, the orchestrator knows too |
+| **Security & governance** | No access control | Governance layer -- who can read/write what, quarantine for suspicious memories |
+| **Resilience** | Gateway crash = everything stops | Self-healing -- watchdog, retry, graceful degradation |
+| **Skill learning** | Static -- agents use what you give them | Skill Memory -- agents learn from doing, mine patterns from workflows |
+| **Research quality** | HyDE + embedding cache | HippoRAG + AMA-Bench -- academic-grade recall and evaluation |
+| **Memory compression** | Dream consolidation (cluster + merge) | SimpleMem semantic compression + hippocampal replay priority queue |
+| **Future awareness** | Basic foresight (time-bounded memories) | Prospective memory -- agents remember future intentions |
+
+**In one sentence:** Right now, each agent has a good brain. When the plan is complete, those brains will be connected -- eleven agents sharing knowledge through a federated, security-layered, self-improving network.
+
+### Phase Roadmap
+
+```
+Phase 0-4   [COMPLETE] ████████████████████░░░░░░░░░░░░░░░░ Individual Intelligence
+Phase 5     [NEXT]     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Cross-Agent Federation
+Phase 6                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Governance & Safety
+Phase 7                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Gateway Hardening
+Phase 8                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Infrastructure & UX
+Phase 9                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Skill Learning
+Phase 10-11            ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Research Extensions
+```
+
+**Phase 0--4** built the individual brain. **Phase 5--11** builds the collective mind.
+
+---
+
 ## Repository Structure
 
 ```
@@ -303,7 +341,7 @@ agent-evolution-kit/
 │
 ├── docs/                                # 33 documentation files
 │   ├── architecture.md                  # System architecture
-│   ├── cognitive-memory.md              # Memory v8.1 (hybrid, dream, utility)
+│   ├── cognitive-memory.md              # Memory v9 (tiers, emotional, hybrid, dream)
 │   ├── orchestration-v4.md              # Latest orchestration patterns
 │   ├── memory-system.md                 # Memory architecture overview
 │   ├── model-architecture.md            # Multi-model strategy
