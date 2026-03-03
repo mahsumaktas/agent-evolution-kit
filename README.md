@@ -8,7 +8,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![GitHub stars](https://img.shields.io/github/stars/mahsumaktas/agent-evolution-kit?style=social)](https://github.com/mahsumaktas/agent-evolution-kit/stargazers)
 
-A production-tested framework for multi-agent orchestration where agents genuinely learn from their failures, evolve their own prompts, and govern themselves through academic self-evolution protocols. Built on peer-reviewed papers (Reflexion, MARS, SCOPE, MAR, A-MEM), cognitive memory v9 with tier hierarchy, emotional memory, hybrid search, dream consolidation, and utility scoring, plus a governance-first architecture with trust scores, circuit breakers, and budget controls. Currently running 11 agents across 28 skills with 40+ infrastructure scripts in daily production.
+A production-tested framework for multi-agent orchestration where agents genuinely learn from their failures, evolve their own prompts, and govern themselves through academic self-evolution protocols. Built on peer-reviewed papers (Reflexion, MARS, SCOPE, MAR, A-MEM, A-MemGuard, MINJA), cognitive memory v9 with tier hierarchy, emotional memory, hybrid search, dream consolidation, utility scoring, trust-scored read-path hardening, memory quarantine, and hash chain audit trails, plus a governance-first architecture with circuit breakers, budget controls, and native sub-agent gateway. Currently running 11 agents across 28 skills with 40+ infrastructure scripts in daily production.
 
 </div>
 
@@ -20,7 +20,9 @@ Most multi-agent frameworks are sophisticated LLM wrappers. They let you chain p
 
 The second gap is governance. Production agent systems need the same operational rigor as any distributed service: circuit breakers that trip when an agent degrades, trust scores that gate autonomy levels, maker-checker loops for high-risk actions, and hard budget limits that prevent runaway API costs.
 
-Agent Evolution Kit closes both gaps. It implements peer-reviewed self-evolution protocols so agents genuinely improve over time, wraps them in a governance layer designed for production trust requirements, and runs everything through a pure orchestrator that never executes tasks itself — only delegates, monitors, and evolves.
+The third gap is memory security. Once agents have long-term memory, that memory becomes an attack surface. Poisoned memories, injected contradictions, and high-frequency writes from compromised agents can degrade the entire system. Without trust scoring, quarantine, and audit trails, memory is a liability rather than an asset.
+
+Agent Evolution Kit closes all three gaps. It implements peer-reviewed self-evolution protocols so agents genuinely improve over time, wraps them in a governance layer designed for production trust requirements, secures long-term memory with trust-gated writes and poisoning defense, and runs everything through a pure orchestrator that never executes tasks itself -- only delegates, monitors, and evolves.
 
 ---
 
@@ -53,6 +55,12 @@ graph TB
         UTIL[Utility Scoring]
         REL[Relational Graph]
         HYDE[HyDE Query Expansion]
+        subgraph "Trust & Security"
+            TRUST[TrustScore Gating]
+            QUAR[Quarantine System]
+            AUDIT[SHA-256 Audit Chain]
+            RGUARD[Read-Path Guard]
+        end
     end
 
     subgraph Infrastructure
@@ -61,6 +69,7 @@ graph TB
         SAND[Sandbox + Canary]
         BRIEF[Briefing System]
         CRON[Cron Audit + Healing]
+        OAGENT[Oracle Sub-Agent Gateway]
     end
 
     ORCH((Orchestrator))
@@ -80,10 +89,11 @@ graph TB
     ORCH --- CB & TS & BL & MC & GOV
     A1 & A2 & A3 & A4 & A5 & A6 --- FSRS & PE & HYBRID
     HYBRID --- DREAM & OBS & UTIL & REL & HYDE
-    ORCH --- DAG & WATCH & SAND & BRIEF & CRON
+    TRUST --- QUAR & AUDIT & RGUARD
+    ORCH --- DAG & WATCH & SAND & BRIEF & CRON & OAGENT
 ```
 
-The **orchestrator** sits at the center and never executes tasks directly. It routes tasks to specialist agents based on capability matching, monitors execution through governance controls, and feeds results into the evolution engine. Failed tasks trigger reflexion, weekly cycles aggregate patterns into strategic rules and prompt mutations. Cognitive Memory v9 gives each agent long-term retention with tier hierarchy, emotional significance detection, hybrid search, dream consolidation, and utility-weighted retrieval.
+The **orchestrator** sits at the center and never executes tasks directly. It routes tasks to specialist agents based on capability matching, monitors execution through governance controls, and feeds results into the evolution engine. Failed tasks trigger reflexion, weekly cycles aggregate patterns into strategic rules and prompt mutations. Cognitive Memory v9 gives each agent long-term retention with tier hierarchy, emotional significance detection, hybrid search, dream consolidation, utility-weighted retrieval, trust-scored write gating, quarantine for suspicious memories, and read-path hardening against poisoning attacks. The Oracle Sub-Agent Gateway provides native Anthropic SDK integration for low-latency inter-agent delegation.
 
 ---
 
@@ -102,6 +112,11 @@ The **orchestrator** sits at the center and never executes tasks directly. It ro
 | Utility scoring (Bellman) | Yes | No | No | No |
 | Intent-based retrieval routing | Yes | No | No | No |
 | Relational memory graph | Yes (A-MEM) | No | No | No |
+| Memory trust scoring | Yes (A-MemGuard) | No | No | No |
+| Memory quarantine system | Yes | No | No | No |
+| Hash chain audit trail | Yes (SHA-256) | No | No | No |
+| Read-path poisoning defense | Yes (10 patterns) | No | No | No |
+| Native sub-agent gateway | Yes (Anthropic SDK) | No | No | No |
 | Circuit breakers | Yes | No | No | No |
 | Maker-checker governance | Yes | No | No | No |
 | Trust score gating | Yes | No | No | No |
@@ -128,7 +143,7 @@ When an agent fails, it generates verbal self-reflection analyzing what went wro
 [Read more: `docs/reflexion-protocol.md`](docs/reflexion-protocol.md)
 
 ### Trajectory Learning (SE-Agent)
-Every task execution is recorded as a trajectory. Four evolution operators — crossover, mutation, selection, and elitism — combine successful trajectories to synthesize better strategies.
+Every task execution is recorded as a trajectory. Four evolution operators -- crossover, mutation, selection, and elitism -- combine successful trajectories to synthesize better strategies.
 [Read more: `docs/trajectory-learning.md`](docs/trajectory-learning.md)
 
 ### Prompt Evolution (SCOPE)
@@ -143,6 +158,21 @@ No agent reviews its own work in isolation. Multi-Agent Review assigns critique 
 Long-term memory with tier hierarchy (working, episodic, semantic), emotional significance detection, Hebbian co-activation, hybrid search (vector + FTS + RRF fusion), FSRS-6 power-law decay, prediction error gating, dream consolidation (cluster + LLM merge + theme extraction), Bellman-style utility scoring, relational graphs (A-MEM spreading activation), HyDE query expansion, MMR diversity filtering, observer pipeline, strategic forgetting, and bi-temporal lifecycle.
 [Read more: `docs/cognitive-memory.md`](docs/cognitive-memory.md)
 
+### Trust Scoring (A-MemGuard)
+Every memory write passes through a trust gate based on the A-MemGuard framework. Each agent has a trust score derived from historical behavior. Writes from agents with trust below 0.3 are rejected outright. Scores between 0.3 and 0.5 route the memory to quarantine for human review. Only agents above 0.5 write directly to long-term storage. Anomaly detection flags burst writes and suspiciously high-importance claims, automatically downgrading trust when patterns match known poisoning vectors.
+[Read more: `docs/cognitive-memory.md`](docs/cognitive-memory.md)
+
+### Memory Quarantine
+Memories flagged by trust scoring or disputed by other agents enter quarantine -- a holding area where they cannot influence retrieval results. The `ltm quarantine` CLI provides list, review, release, and delete operations. When three or more agents dispute a memory via `disputeMemory()`, it is auto-quarantined regardless of the writing agent's trust score. This prevents a single compromised agent from corrupting the shared knowledge base.
+[Read more: `docs/cognitive-memory.md`](docs/cognitive-memory.md)
+
+### Read-Path Hardening
+Defense against memory poisoning does not stop at write-time. The read path applies trust-aware re-ranking so low-trust memories rank lower even if semantically relevant. Ten poisoning indicator patterns (prompt injection markers, unusual encoding, contradictions with established facts) are checked at retrieval time. Contradiction detection cross-references retrieved memories against each other. Query rate anomaly tracking detects and throttles suspicious retrieval patterns that may indicate extraction attacks. Based on MINJA and OWASP ASI06 guidelines.
+[Read more: `docs/cognitive-memory.md`](docs/cognitive-memory.md)
+
+### Oracle Sub-Agent Gateway
+Native sub-agent execution using Anthropic SDK `toolRunner` for low-latency inter-agent delegation (1--3s per call vs 12s via CLI). Three tools: `oracle_agent` (unified gateway), `oracle_research` (deep research with web access), and `oracle_code` (coding tasks). Four modes select the appropriate model and tool set: research (Opus, 50 turns), code (Sonnet, 30 turns), analyze (Opus, 20 turns), and quick (Haiku, 3 turns). Internal tools include file operations, search, bash, and memory store/recall. Prompt caching with `cache_control: ephemeral` provides 90% read cost discount on system prompts.
+
 ### Dream Consolidation
 Periodic 8-step memory lifecycle: utility decay, rehearsal, foresight expiry, strategic forgetting, clustering, LLM consolidation (max 5 calls), redundancy detection, and deep abstraction. Keeps memory lean while preserving valuable patterns.
 [Read more: `docs/cognitive-memory.md#dream-consolidation`](docs/cognitive-memory.md)
@@ -152,12 +182,16 @@ Bellman-style tracking of memory usefulness. Updates on use (learning rate 0.1),
 [Read more: `docs/cognitive-memory.md#bellman-style-utility-scoring`](docs/cognitive-memory.md)
 
 ### Intent-Based Routing
-Classifies query intent (factual, temporal, causal, entity, preference, general) and selects optimal retrieval strategy — including graph traversal for causal queries and entity hub lookup for profile queries.
+Classifies query intent (factual, temporal, causal, entity, preference, general) and selects optimal retrieval strategy -- including graph traversal for causal queries and entity hub lookup for profile queries.
 [Read more: `docs/cognitive-memory.md#intent-based-retrieval-routing`](docs/cognitive-memory.md)
 
 ### Strategic Forgetting
 Capacity-aware pruning: contradiction cleanup, foresight expiry, utility floor (< 0.15 + 30 days unused), redundancy detection (cosine > 0.9), and capacity management (500 active limit). Dormant memories move to cold storage, never deleted.
 [Read more: `docs/cognitive-memory.md#strategic-forgetting`](docs/cognitive-memory.md)
+
+### Audit Trail
+SHA-256 hash chain verification for all memory operations. Each write appends to an immutable audit log where every entry's hash incorporates the previous entry's hash, forming a tamper-evident chain. The `ltm audit` CLI provides verify (chain integrity check), log (recent operations), and stats (per-agent write/read statistics) commands. This enables forensic analysis when memory corruption is suspected.
+[Read more: `docs/cognitive-memory.md`](docs/cognitive-memory.md)
 
 ### Operational Logging
 Fire-and-forget JSONL telemetry for all LLM-assisted decisions. 10MB rotation, async append, zero latency impact. Enables post-hoc analysis of memory operations.
@@ -263,13 +297,16 @@ Minimum integration: (1) call reflexion after failures, (2) maintain trajectory 
 | **MAR** | 2024 | Multi-agent cross-review catches single-agent blind spots | [`docs/cross-agent-critique.md`](docs/cross-agent-critique.md) |
 | **A-MEM** | 2024 | Spreading activation for memory evolution and crosslinking | [`docs/cognitive-memory.md`](docs/cognitive-memory.md) |
 | **SCOPE** | 2024 | Dual-stream prompt optimization (semantic + structural) | [`docs/prompt-evolution.md`](docs/prompt-evolution.md) |
+| **MINJA** | 2024 | Memory injection attack defense and detection patterns | [`docs/cognitive-memory.md`](docs/cognitive-memory.md) |
 | **SE-Agent** | 2025 | Evolutionary operators on experience trajectories | [`docs/trajectory-learning.md`](docs/trajectory-learning.md) |
 | **MARS** | 2025 | Two-level metacognitive reflection catches systematic bias | [`docs/metacognitive-reflection.md`](docs/metacognitive-reflection.md) |
 | **AgentRR** | 2025 | Two-level experience storage for debugging and learning | [`docs/record-and-replay.md`](docs/record-and-replay.md) |
+| **A-MemGuard** | 2025 | Consensus + dual-memory trust framework for memory security | [`docs/cognitive-memory.md`](docs/cognitive-memory.md) |
 | **HyDE** (Gao et al.) | 2022 | Hypothetical document embeddings for query expansion | [`docs/cognitive-memory.md`](docs/cognitive-memory.md) |
 | **MMR** (Carbonell) | 1998 | Maximal marginal relevance for diverse retrieval | [`docs/cognitive-memory.md`](docs/cognitive-memory.md) |
 | **RRF** (Cormack) | 2009 | Reciprocal rank fusion for hybrid search | [`docs/cognitive-memory.md`](docs/cognitive-memory.md) |
 | **ACT-R** (Anderson) | 1993 | Base-level activation model from cognitive psychology | [`docs/cognitive-memory.md`](docs/cognitive-memory.md) |
+| **OWASP ASI06** | 2025 | Memory poisoning prevention guidelines for AI agents | [`docs/cognitive-memory.md`](docs/cognitive-memory.md) |
 
 ArXiv: [2303.11366](https://arxiv.org/abs/2303.11366), [2512.20845](https://arxiv.org/abs/2512.20845), [2512.15374](https://arxiv.org/abs/2512.15374), [2508.02085](https://arxiv.org/abs/2508.02085), [2601.11974](https://arxiv.org/abs/2601.11974), [2505.17716](https://arxiv.org/abs/2505.17716)
 
@@ -277,39 +314,41 @@ ArXiv: [2303.11366](https://arxiv.org/abs/2303.11366), [2512.20845](https://arxi
 
 ## The Brain: Where We Are and Where We're Going
 
-### Current State (After Phase 0--4)
+### Current State (After Phase 0--4 + Phase 7)
 
 Each agent has a strong individual memory. It remembers what matters, forgets what doesn't, organizes knowledge into tiers (working, episodic, semantic), runs dream consolidation cycles to merge and compress, detects emotional significance, and strengthens associative links through Hebbian co-activation.
 
-But every agent is an island. CikCik learns something valuable -- no other agent knows. Soros makes a strategic decision -- it never reaches the orchestrator. Eleven agents, eleven isolated brains.
+Phase 7 added a security and governance layer to that memory. Every write passes through trust scoring -- agents earn or lose trust based on behavioral patterns, and low-trust writes are rejected or quarantined. A SHA-256 hash chain audit trail makes all memory operations tamper-evident. The read path defends against poisoning with 10 detection patterns, contradiction checking, and trust-aware re-ranking. A dispute mechanism lets agents flag suspicious memories, with auto-quarantine after three disputes.
+
+But every agent is still an island. CikCik learns something valuable -- no other agent knows. Soros makes a strategic decision -- it never reaches the orchestrator. Eleven agents, eleven isolated brains with individually hardened memory.
 
 ### The Full Vision (After Phase 5--11)
 
-| Capability | Now (Phase 0--4) | After (Phase 5--11) |
+| Capability | Now (Phase 0--4 + 7) | After (Phase 5--11) |
 |---|---|---|
 | **Cross-agent knowledge** | Zero. Every agent is isolated. | Federation -- what CikCik learns, the orchestrator knows too |
-| **Security & governance** | No access control | Governance layer -- who can read/write what, quarantine for suspicious memories |
+| **Security & governance** | Trust scoring, quarantine, hash chain audit, read-path hardening | Full RBAC -- role-based access per agent, per memory tier |
 | **Resilience** | Gateway crash = everything stops | Self-healing -- watchdog, retry, graceful degradation |
 | **Skill learning** | Static -- agents use what you give them | Skill Memory -- agents learn from doing, mine patterns from workflows |
 | **Research quality** | HyDE + embedding cache | HippoRAG + AMA-Bench -- academic-grade recall and evaluation |
 | **Memory compression** | Dream consolidation (cluster + merge) | SimpleMem semantic compression + hippocampal replay priority queue |
 | **Future awareness** | Basic foresight (time-bounded memories) | Prospective memory -- agents remember future intentions |
 
-**In one sentence:** Right now, each agent has a good brain. When the plan is complete, those brains will be connected -- eleven agents sharing knowledge through a federated, security-layered, self-improving network.
+**In one sentence:** Right now, each agent has a good brain with security guardrails. When the plan is complete, those brains will be connected -- eleven agents sharing knowledge through a federated, self-improving network.
 
 ### Phase Roadmap
 
 ```
 Phase 0-4   [COMPLETE] ████████████████████░░░░░░░░░░░░░░░░ Individual Intelligence
+Phase 7     [COMPLETE] ████████████████████░░░░░░░░░░░░░░░░ Memory Security & Hardening
 Phase 5     [NEXT]     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Cross-Agent Federation
-Phase 6                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Governance & Safety
-Phase 7                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Gateway Hardening
+Phase 6                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Advanced Governance
 Phase 8                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Infrastructure & UX
 Phase 9                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Skill Learning
 Phase 10-11            ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Research Extensions
 ```
 
-**Phase 0--4** built the individual brain. **Phase 5--11** builds the collective mind.
+**Phase 0--4** built the individual brain. **Phase 7** secured it. **Phase 5--11** builds the collective mind.
 
 ---
 
@@ -339,9 +378,9 @@ agent-evolution-kit/
 │       ├── reflection.yaml
 │       └── review-loop.yaml
 │
-├── docs/                                # 33 documentation files
+├── docs/                                # 31 documentation files
 │   ├── architecture.md                  # System architecture
-│   ├── cognitive-memory.md              # Memory v9 (tiers, emotional, hybrid, dream)
+│   ├── cognitive-memory.md              # Memory v9 (tiers, trust, quarantine, audit)
 │   ├── orchestration-v4.md              # Latest orchestration patterns
 │   ├── memory-system.md                 # Memory architecture overview
 │   ├── model-architecture.md            # Multi-model strategy
@@ -369,6 +408,7 @@ agent-evolution-kit/
 │   ├── shadow-agent.md                 # Observer monitoring
 │   ├── priority-queue.md               # Task prioritization
 │   ├── context-compaction.md           # Memory compaction
+│   ├── quick-start.md                  # Getting started guide
 │   └── academic-references.md          # Paper summaries
 │
 ├── skills/                              # 28 operational skills
@@ -462,6 +502,7 @@ Areas where contributions are especially valuable:
 - **Framework adapters** for LangChain, CrewAI, LangGraph, or other orchestration frameworks
 - **Evaluation benchmarks** for measuring evolution effectiveness
 - **Cognitive memory backends** beyond the reference LanceDB implementation
+- **Memory security patterns** -- trust scoring strategies, poisoning detection rules, quarantine policies
 - **Production case studies** from teams running the evolution system
 - **New skills** following the SKILL.md format
 
